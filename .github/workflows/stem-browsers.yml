@@ -59,8 +59,10 @@ jobs:
             echo "::error::Android emulator installation: $(tail -c 700 "$RUNNER_TEMP/android-sdk.log" | tr '\r\n' ' ') $(tail -c 700 "$RUNNER_TEMP/version.log" | tr '\n' ' ')"
             exit 1
           fi
-          echo no | avdmanager create avd --force -n mixlab -k "$image" --device pixel_5
-          config="$HOME/.android/avd/mixlab.avd/config.ini"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/mixlab-avds"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force -n mixlab -k "$image" --device pixel_5 --path "$ANDROID_AVD_HOME/mixlab.avd"
+          config="$ANDROID_AVD_HOME/mixlab.avd/config.ini"
           sed -i '/^disk.dataPartition.size=/d' "$config"
           echo 'disk.dataPartition.size=2048M' >> "$config"
           "$ANDROID_HOME/emulator/emulator" -avd mixlab -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect -memory 4096 > "$RUNNER_TEMP/emulator.log" 2>&1 &

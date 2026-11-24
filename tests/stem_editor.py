@@ -36,7 +36,7 @@ with sync_playwright() as pw:
     browser = (pw.chromium.connect_over_cdp(args.cdp) if args.cdp else
                getattr(pw,args.browser).launch(executable_path=args.executable))
     context=browser.contexts[0] if args.cdp else browser.new_context(viewport={'width':900,'height':840})
-    page=context.new_page()
+    page=context.pages[0] if args.cdp and context.pages else context.new_page()
     page.set_default_timeout(20000)
     errors=[]
     requests=[]

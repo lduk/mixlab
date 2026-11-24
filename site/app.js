@@ -1059,7 +1059,12 @@ $('applyGroup').onclick=()=>{
 $('clipWav').onclick=()=>exportMix('wav',true)
 $('clipMp3').onclick=()=>exportMix('mp3',true)
 $('filter').onchange=()=>{remember();current().filter=$('filter').value;render()}
-$('solo').onclick=()=>{remember();current().solo=!current().solo;render()}
+$('solo').onclick=()=>{
+  recordEdit()
+  current().solo=!current().solo
+  updateLiveLevel?.(active)
+  render()
+}
 $('save').onclick=()=>exportMix('wav')
 $('mp3').onclick=()=>exportMix('mp3')
 render()
