@@ -88,7 +88,7 @@ export async function prepare(items) {
   }
 }
 
-export function schedule(ctx,items,start,from,to,connectLiveOutput) {
+export function mixPeak(items) {
   // Conservative headroom based on the largest simultaneous sum of clip gains.
   const edges=items.flatMap(c=>[[c.at,c.volume/100],[c.at+duration(c),-c.volume/100]])
   let sum=0, peak=1
@@ -96,6 +96,11 @@ export function schedule(ctx,items,start,from,to,connectLiveOutput) {
     sum+=gain
     peak=Math.max(peak,sum)
   }
+  return peak
+}
+
+export function schedule(ctx,items,start,from,to,connectLiveOutput) {
+  const peak=mixPeak(items)
   const nodes=[]
   for(const c of items){
     const first=Math.max(from,c.at), last=Math.min(to,c.at+duration(c))
@@ -117,13 +122,14 @@ export function schedule(ctx,items,start,from,to,connectLiveOutput) {
       points.add(tr.start+tr.overlap)
       points.add(tr.start+tr.overlap+1/ctx.sampleRate)
     }
+    const level=c.volume/100/peak
     for(const t of [...points].filter(t=>t>=local && t<=last-c.at).sort((a,b)=>a-b)){
-      const value=envelope(c,t)*c.volume/100/peak
+      const value=envelope(c,t)*(connectLiveOutput ? 1 : level)
       if(t===local) gain.gain.setValueAtTime(value,onset)
       else gain.gain.linearRampToValueAtTime(value,onset+t-local)
     }
     source.connect(gain)
-    if(connectLiveOutput)connectLiveOutput(gain,c)
+    if(connectLiveOutput)connectLiveOutput(gain,c,level)
     else gain.connect(ctx.destination)
     source.start(onset,(c.processed ? 0 : c.begin)+local*speed,(last-first)*speed)
     nodes.push(source)

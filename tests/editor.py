@@ -125,6 +125,39 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     assert max(map(abs,silence))==0 and len(silence)==10*rate
     toolbar.locator('[data-action=mute]').click()
     assert page.locator('#volume').input_value()=='100'
+    slider=toolbar.get_by_role('slider')
+    rate,full=export()
+    page.locator('#play').click()
+    page.wait_for_function("!document.getElementById('pauseMix').disabled")
+    # One continuous adjustment is one edit, even when it produces many input events.
+    slider.scroll_into_view_if_needed()
+    box=slider.bounding_box()
+    y=box['y']+box['height']/2
+    page.mouse.move(box['x']+box['width']-7,y)
+    page.mouse.down()
+    page.mouse.move(box['x']+box['width']/2,y,steps=8)
+    page.mouse.up()
+    value=int(slider.input_value())
+    assert abs(value-50)<=3, value
+    assert toolbar.locator('.clip-volume span').inner_text()==f'{value}%'
+    assert page.locator('#volume').input_value()==str(value)
+    assert page.locator('#pauseMix').is_enabled()
+    page.locator('#stop').click()
+    rate,quieter=export()
+    assert abs(max(quieter)/max(full)-value/100)<.001
+    page.locator('#undo').click()
+    assert slider.input_value()=='100'
+    page.locator('#redo').click()
+    assert slider.input_value()==str(value)
+    toolbar.locator('[data-action=mute]').click()
+    slider.fill('25')
+    toolbar.locator('[data-action=mute]').click()
+    assert page.locator('#volume').input_value()=='25'
+    slider.press('Home')
+    rate,silence=export()
+    assert slider.input_value()=='0' and max(map(abs,silence))==0
+    field('volume',100)
+    assert slider.input_value()=='100'
     field('targetBpm',125)
     assert page.locator('#speed').input_value()=='125'
     rate,signal=export()
@@ -178,6 +211,11 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     field('offset',5)
     rate,signal=export()
     assert abs(len(signal)/rate-15)<.001
+    firstVolume=page.locator('.clip-volume input').first
+    firstVolume.fill('20')
+    assert page.locator('.clip-volume input').nth(1).input_value()=='100'
+    assert page.locator('#volume').input_value()=='100'
+    firstVolume.fill('100')
     secondMute=page.locator('[data-action=mute]').nth(1)
     secondMute.click()
     singleRate,single=export()
@@ -258,6 +296,11 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     assert phone.locator('.clip-tempo').last.inner_text()=='120 BPM'
     phone.locator('[data-action=faster]').last.tap()
     assert phone.locator('.clip-tempo').last.inner_text()=='121 BPM'
+    mobileSlider=phone.get_by_role('slider',name='Głośność klipu beat.wav')
+    mobileSlider.scroll_into_view_if_needed()
+    mobileSlider.tap()
+    assert 0<int(mobileSlider.input_value())<100
+    assert phone.locator('.clip-volume span').last.inner_text()==mobileSlider.input_value()+'%'
     phone.locator('#estimateBpm').tap()
     assert phone.locator('#sourceBpm').input_value()=='120'
     phone.locator('#openEffects').tap()

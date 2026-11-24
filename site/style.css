@@ -37,7 +37,7 @@ button[aria-pressed=true]{background:#446789;border-color:#80a6cc}
 #lanes>div::before{content:attr(data-name);font-size:12px;color:var(--muted);padding:3px 8px;display:block}
 #lanes:empty{min-height:145px;display:grid;place-items:center}
 #lanes:empty::before{content:'Dodaj audio, aby rozpocząć montaż';color:var(--muted);padding:12px;text-align:center}
-#lanes .wave-clip{position:absolute;top:30px;left:var(--at);width:var(--duration);height:62px;min-height:0;padding:0;border:1px solid #759fca;background:#315577;color:#f2f9ff;overflow:hidden;text-align:left;cursor:grab;touch-action:none;user-select:none}
+#lanes .wave-clip{position:absolute;top:60px;left:var(--at);width:var(--duration);height:62px;min-height:0;padding:0;border:1px solid #759fca;background:#315577;color:#f2f9ff;overflow:hidden;text-align:left;cursor:grab;touch-action:none;user-select:none}
 #lanes .wave-clip[data-color="1"]{background:#266558;border-color:#6eb5a4}
 #lanes .wave-clip[data-color="2"]{background:#57436f;border-color:#a08bb5}
 #lanes .wave-clip[data-color="3"]{background:#73523c;border-color:#be997e}
@@ -84,11 +84,14 @@ li button:first-child{flex:1;text-align:left;overflow-wrap:anywhere}
   .options button{margin-left:0}
 }
 
-.clip-slot{position:absolute;left:0;right:0;height:92px;pointer-events:none}
+.clip-slot{position:absolute;left:0;right:0;height:122px;pointer-events:none}
 .clip-slot .wave-clip,.clip-tools{pointer-events:auto}
 .clip-slot.muted .wave-clip{opacity:.5}
-.clip-dock{position:absolute;top:0;left:clamp(0px,var(--at),calc(100% - var(--controls-width)));width:max(var(--duration),var(--controls-width));height:30px}
-.clip-tools{position:sticky;left:0;display:flex;align-items:center;width:var(--controls-width);height:30px;gap:2px;padding:2px;background:#263340;border-radius:6px 6px 0 0}
+.clip-dock{position:absolute;top:0;left:clamp(0px,var(--at),calc(100% - var(--controls-width)));width:max(var(--duration),var(--controls-width));height:60px}
+.clip-tools{position:sticky;left:0;display:flex;flex-wrap:wrap;align-items:center;width:var(--controls-width);height:60px;gap:2px;padding:2px;background:#263340;border-radius:6px 6px 0 0}
+.clip-volume{display:flex;align-items:center;gap:4px;width:100%;height:26px;padding:0 3px;font-size:11px;color:#d4dce5}
+.clip-volume input{flex:1;min-width:0;height:26px;margin:0;accent-color:#84d9b7;cursor:pointer;touch-action:pan-y}
+.clip-volume span{min-width:4ch;text-align:right;font-variant-numeric:tabular-nums}
 .clip-tempo{flex:1;text-align:center;font:600 12px ui-monospace,monospace;white-space:nowrap}
 .clip-tools button{min-height:26px;padding:2px 6px;min-width:27px;font-size:13px;border-radius:4px}
 .clip-tools button[aria-pressed=true]{color:#ffe3a4;background:#634d32}

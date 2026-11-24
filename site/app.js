@@ -1,6 +1,6 @@
 import {effects, effectBuffer} from './effects.js'
 import {estimateBpm} from './bpm.js'
-import {duration, transitions, transitionGain, fadeScale, envelope, prepare, schedule} from './audio.js'
+import {duration, transitions, transitionGain, fadeScale, envelope, prepare, schedule, mixPeak} from './audio.js'
 const $ = id => document.getElementById(id)
 let clips = [], history = [], active = 0, context, sources = []
 const current = () => clips[active]
@@ -27,7 +27,7 @@ function showTime(position, total){
   $('clock').textContent=format(position)+' / '+format(total)
   $('cursor').style.left=(100*position/span)+'%'
 }
-let updateLiveMute = null
+let updateLiveLevel = null
 let playbackMode = null
 let exporting = false
 function updatePause(){
@@ -38,7 +38,7 @@ function updatePause(){
   }
 }
 function stop() {
-  updateLiveMute=null
+  updateLiveLevel=null
   revision++
   playbackMode=null
   updatePause()
@@ -191,10 +191,42 @@ function makeClipControls(c,index){
   const mute=control(c.muted ? 'Włącz' : 'Wycisz',c.muted ? 'Włącz dźwięk klipu' : 'Wycisz dźwięk klipu',()=>{
     recordEdit()
     clips[index].muted=!clips[index].muted
-    updateLiveMute?.(index,clips[index].muted)
+    updateLiveLevel?.(index)
   })
   mute.dataset.action='mute'
   mute.setAttribute('aria-pressed',Boolean(c.muted))
+  const volumeRow=document.createElement('label')
+  volumeRow.className='clip-volume'
+  volumeRow.append('Głośność')
+  const slider=document.createElement('input')
+  slider.type='range'
+  slider.min=0
+  slider.max=100
+  slider.value=c.volume
+  slider.setAttribute('aria-label','Głośność klipu '+c.name)
+  const readout=document.createElement('span')
+  function showLevel(value){
+    readout.textContent=value+'%'
+    slider.setAttribute('aria-valuetext',readout.textContent)
+  }
+  showLevel(c.volume)
+  let editing=false
+  slider.oninput=()=>{
+    if(!editing){
+      recordEdit()
+      editing=true
+      $('undo').disabled=false
+      $('redo').disabled=true
+    }
+    const value=slider.valueAsNumber
+    clips[index].volume=value
+    showLevel(value)
+    if(active===index)$('volume').value=value
+    updateLiveLevel?.(index)
+  }
+  slider.onchange=slider.onblur=()=>{editing=false}
+  volumeRow.append(slider,readout)
+  tools.append(volumeRow)
   dock.append(tools)
   return dock
 }
@@ -313,8 +345,8 @@ function renderTimeline(items){
     bar.setAttribute('aria-pressed',index===active)
     slot.append(bar,makeClipControls(clip,index))
     lane.append(slot)
-    slot.style.top=(23+row*96)+'px'
-    lane.style.height=(25+ends.length*96)+'px'
+    slot.style.top=(23+row*126)+'px'
+    lane.style.height=(25+ends.length*126)+'px'
     paintClip(bar,clip)
     bar.onclick=e=>{if(e.detail===0){active=index;render()}}
     bar.onpointerdown=e=>{
@@ -734,8 +766,20 @@ async function play(mode,items,origin,from,to,repeat=false){
     if(length<=0)return
     let start
     const total=lengthOf(arrangement())
-    // Mute can change while pitch-preserving audio is being prepared.
-    for(const c of items)c.muted=clips[c.index].muted
+    // The user can adjust a clip while pitch-preserving audio is being prepared.
+    function syncLevel(c){
+      c.volume=clips[c.index].volume
+      c.muted=clips[c.index].muted
+    }
+    items.forEach(syncLevel)
+    let applyLevels
+    updateLiveLevel=index=>{
+      const clip=items.find(c=>c.index===index)
+      if(clip){
+        syncLevel(clip)
+        applyLevels()
+      }
+    }
     function begin(){
       playbackMode=mode
       updatePause()
@@ -772,23 +816,23 @@ async function play(mode,items,origin,from,to,repeat=false){
           if(token===revision){stop();$('message').textContent='Nie udało się przygotować pętli.'}
         }finally{building=false}
       }
-      updateLiveMute=(index,muted)=>{
-        const clip=items.find(c=>c.index===index)
-        if(clip){clip.muted=muted;refreshLoop()}
-      }
+      applyLevels=refreshLoop
       await refreshLoop()
     }else{
       const gates=new Map()
       start=context.currentTime+.04
-      sources=schedule(context,items,start,from,to,(gain,c)=>{
+      sources=schedule(context,items,start,from,to,(gain,c,level)=>{
         const gate=context.createGain()
-        gate.gain.value=c.muted ? 0 : 1
+        gate.gain.value=c.muted ? 0 : level
         gain.connect(gate).connect(context.destination)
-        gates.set(c.index,gate)
+        gates.set(c,gate)
       })
-      updateLiveMute=(index,muted)=>{
-        const gate=gates.get(index)
-        if(gate)gate.gain.setTargetAtTime(muted ? 0 : 1,context.currentTime,.003)
+      applyLevels=()=>{
+        const peak=mixPeak(items)
+        for(const [clip,gate] of gates){
+          const level=clip.muted ? 0 : clip.volume/100/peak
+          gate.gain.setTargetAtTime(level,context.currentTime,.003)
+        }
       }
       begin()
     }
@@ -796,9 +840,14 @@ async function play(mode,items,origin,from,to,repeat=false){
       const t=Math.max(0,context.currentTime-start)
       showTime(origin+from+(repeat?t%length:Math.min(t,length)),total)
       if(repeat || t<length)frame=requestAnimationFrame(tick)
-      else {sources=[];playbackMode=null;updateLiveMute=null;updatePause()}
+      else {sources=[];playbackMode=null;updateLiveLevel=null;updatePause()}
     }
-  }catch{$('message').textContent='Nie udało się przygotować odsłuchu.'}
+  }catch{
+    if(token===revision){
+      stop()
+      $('message').textContent='Nie udało się przygotować odsłuchu.'
+    }
+  }
 }
 $('play').onclick=()=>{
   const items=arrangement(),total=lengthOf(items)
