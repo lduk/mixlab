@@ -15,10 +15,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('archive', type=Path)
 parser.add_argument('--url', default='http://localhost:8213')
 parser.add_argument('--executable', help='Optional browser executable path')
+parser.add_argument('--repeat-first', type=int, metavar='N', help='Repeat the first excerpt N times for a longer multi-segment memory test')
 parser.add_argument('--gpu', action='store_true')
 parser.add_argument('--browser', choices=['chromium', 'firefox'], default='chromium')
 args = parser.parse_args()
 tracks = ['Cristina Vane - So Easy', 'Louis Cressy Band - Good Time', 'Secretariat - Borderline']
+
+if args.repeat_first is not None:
+    if args.repeat_first<1: parser.error('N must be positive')
+    tracks=tracks[:1]
 
 def decode(path, stream):
     raw = subprocess.check_output(['ffmpeg','-v','error','-i',str(path),'-map',f'0:a:{stream}',
@@ -43,6 +48,9 @@ with tempfile.TemporaryDirectory() as folder, zipfile.ZipFile(args.archive) as a
         size = min(a.shape[1] for a in parts)
         backing = sum(a[:,:size] for a in parts[:3])
         voice = parts[3][:,:size]
+        if args.repeat_first:
+            voice=np.tile(voice,(1,args.repeat_first))
+            backing=np.tile(backing,(1,args.repeat_first))
         fixture = np.concatenate([voice+backing,voice,backing]).astype('<f4').tobytes()
         page.route('**/__benchmark.pcm',lambda r:r.fulfill(body=fixture,content_type='application/octet-stream'))
         baseline = browser_rss()
@@ -100,7 +108,7 @@ with tempfile.TemporaryDirectory() as folder, zipfile.ZipFile(args.archive) as a
         finally:
             done.set()
             thread.join()
-        result.update(track=name,baselineMiB=round(baseline),peakMiB=round(max(samples or [baseline])))
+        result.update(track=name,repetitions=args.repeat_first or 1,baselineMiB=round(baseline),peakMiB=round(max(samples or [baseline])))
         print(json.dumps(result),flush=True)
         assert result['backend']!='pamięć lokalna' and result['reconstructionError']<1e-5
         assert all(result[key]['improvement']>0 for key in ('vocals','accompaniment'))

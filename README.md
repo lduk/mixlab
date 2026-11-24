@@ -3,7 +3,7 @@
 Lokalny edytor nagrań działający w przeglądarce. Uruchom w katalogu projektu:
 
 ```sh
-python3 -m http.server 8213 --directory site
+python3 scripts/serve.py
 ```
 
 Otwórz port 8213 w przeglądarce. Do publikacji wystarcza zawartość katalogu `site/`. Workflow w `.github/workflows/pages.yml` publikuje ten katalog po wysłaniu zmian na `main`. Odświeżenie strony usuwa sesję edytora. Pobrane wagi AI i wyniki separacji mogą pozostać w lokalnym cache witryny.

@@ -5,8 +5,7 @@ import io
 import math
 import struct
 import wave
-from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import sys
 from pathlib import Path
 from threading import Thread
 from urllib.parse import urlsplit
@@ -21,13 +20,9 @@ parser.add_argument('--cdp', help='Chrome DevTools address, e.g. an adb-forwarde
 args = parser.parse_args()
 
 if args.serve:
-    class Handler(SimpleHTTPRequestHandler):
-        extensions_map={**SimpleHTTPRequestHandler.extensions_map,
-                        '.js':'text/javascript','.mjs':'text/javascript','.wasm':'application/wasm'}
-        def log_message(self, *args):
-            pass
-    site=Path(__file__).resolve().parents[1]/'site'
-    server=ThreadingHTTPServer(('127.0.0.1',urlsplit(args.url).port or 80),partial(Handler,directory=site))
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+    from serve import create_server
+    server=create_server('127.0.0.1',urlsplit(args.url).port or 80)
     Thread(target=server.serve_forever,daemon=True).start()
 
 def fixture():

@@ -50,7 +50,7 @@ Uruchom z katalogu repozytorium:
 
 ```sh
 bash scripts/prepare-stems.sh
-python3 -m http.server 8213 --directory site
+python3 scripts/serve.py
 ```
 
 Drugi terminal, środowisko z Pythonem oraz FFmpeg na PATH:

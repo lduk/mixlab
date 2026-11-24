@@ -49,10 +49,23 @@ jobs:
           trap 'echo "::error::Android setup failed at line $LINENO ($BASH_COMMAND)"' ERR
           sudo chmod a+rw /dev/kvm
           image='system-images;android-35;google_apis_playstore;x86_64'
-          sdkmanager "$image"
+          sdkmanager "platform-tools" "emulator" "$image"
+          "$ANDROID_HOME/emulator/emulator" -version
           echo no | avdmanager create avd --force -n mixlab -k "$image" --device pixel_5
-          emulator -avd mixlab -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -memory 4096 > "$RUNNER_TEMP/emulator.log" 2>&1 &
-          timeout 180 adb wait-for-device
+          config="$HOME/.android/avd/mixlab.avd/config.ini"
+          sed -i '/^disk.dataPartition.size=/d' "$config"
+          echo 'disk.dataPartition.size=2048M' >> "$config"
+          "$ANDROID_HOME/emulator/emulator" -avd mixlab -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect -memory 4096 > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          pid=$!
+          for attempt in {1..90}; do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "::error::Emulator startup: $(tail -c 1000 "$RUNNER_TEMP/emulator.log" | tr '\n' ' ')"
+              exit 1
+            fi
+            if adb devices | grep -q 'emulator-.*device'; then break; fi
+            sleep 2
+          done
+          timeout 10 adb wait-for-device
           timeout 300 bash -c 'until adb shell getprop sys.boot_completed | grep -q 1; do sleep 3; done'
           adb shell pm path com.android.chrome | grep -q package:
           adb shell input keyevent 82
