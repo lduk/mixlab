@@ -1,7 +1,27 @@
 const $ = id => document.getElementById(id)
 let clips = [], history = [], active = 0, context, sources = []
 const current = () => clips[active]
+let frame, selection, drag
+const duration = c => (c.end - c.begin) / c.speed
+function arrangement(){
+  let next = 0
+  return clips.map(c => {
+    const at = c.offset ?? next
+    next = at + duration(c)
+    return {...c, at}
+  })
+}
+const lengthOf = items => items.reduce((n,c) => Math.max(n,c.at+duration(c)),0)
+function showTime(position, total){
+  function format(t){
+    return Math.floor(t/60)+':'+(t%60).toFixed(2).padStart(5,'0')
+  }
+  $('clock').textContent=format(position)+' / '+format(total)
+  $('cursor').style.left=(total ? 100*position/total : 0)+'%'
+}
 function stop() {
+  cancelAnimationFrame(frame)
+  showTime(0,lengthOf(arrangement()))
   sources.forEach(s => s.stop())
   sources = []
 }
@@ -15,7 +35,7 @@ function draw() {
   const c = current(), data = c.buffer.getChannelData(0)
   g.clearRect(0,0,1000,120)
   g.fillStyle = '#394b32'
-  g.fillRect(1000*c.begin/c.buffer.duration,0,1000*(c.end-c.begin)/c.buffer.duration,120)
+  g.fillRect(1000*(selection?.begin ?? c.begin)/c.buffer.duration,0,1000*((selection?.end ?? c.end)-(selection?.begin ?? c.begin))/c.buffer.duration,120)
   g.fillStyle = '#c5f16a'
   for(let x=0;x<1000;x++){
     const start=Math.floor(x*data.length/1000), width=Math.ceil(data.length/1000)
@@ -25,6 +45,22 @@ function draw() {
   }
 }
 function render(){
+  selection=null
+  drag=null
+  $('trim').disabled=true
+  const items=arrangement(), total=lengthOf(items)
+  if(!sources.length) showTime(0,total)
+  $('lanes').replaceChildren()
+  items.forEach((c,i)=>{
+    const lane=document.createElement('div'), bar=document.createElement('button')
+    bar.textContent=c.name
+    bar.style.marginLeft=(100*c.at/total)+'%'
+    bar.style.width=(100*duration(c)/total)+'%'
+    bar.setAttribute('aria-pressed',active===i)
+    bar.onclick=()=>{active=i;render()}
+    lane.append(bar)
+    $('lanes').append(lane)
+  })
   const list=$('list')
   list.replaceChildren()
   clips.forEach((c,i)=>{
@@ -48,6 +84,7 @@ function render(){
   if(!clips.length) list.textContent='Brak klipów'
   else {
     for(const key of ['begin','end','speed','volume']) $(key).value=current()[key]
+    $('offset').value=current().offset ?? ''
     draw()
   }
   $('play').disabled=$('save').disabled=!clips.length
@@ -76,6 +113,42 @@ for(const key of ['begin','end','speed','volume']) $(key).onchange=()=>{
   }else $('message').textContent='Sprawdź zakres wartości.'
   render()
 }
+$('offset').onchange=()=>{
+  const field=$('offset')
+  if(field.validity.valid){
+    remember()
+    current().offset=field.value==='' ? null : field.valueAsNumber
+  }
+  render()
+}
+const wave=document.querySelector('canvas')
+function timeAt(e){
+  const box=wave.getBoundingClientRect()
+  return Math.max(0,Math.min(1,(e.clientX-box.left)/box.width))*current().buffer.duration
+}
+wave.onpointerdown=e=>{
+  if(e.button!==0 || !e.isPrimary)return
+  drag=timeAt(e)
+  wave.setPointerCapture(e.pointerId)
+  selection=null
+  $('trim').disabled=true
+  draw()
+}
+function selectRange(e){
+  if(drag==null || !e.isPrimary)return
+  const t=timeAt(e)
+  selection={begin:Math.min(t,drag),end:Math.max(t,drag)}
+  $('trim').disabled=selection.end-selection.begin<1/current().buffer.sampleRate
+  draw()
+}
+wave.onpointermove=selectRange
+wave.onpointerup=e=>{selectRange(e);drag=null}
+wave.onpointercancel=()=>{drag=null;selection=null;$('trim').disabled=true;draw()}
+$('trim').onclick=()=>{
+  remember()
+  Object.assign(current(),selection)
+  render()
+}
 $('undo').onclick=()=>{stop();({clips,active}=history.pop());render()}
 function schedule(ctx,items,start){
   const nodes=[]
@@ -83,21 +156,35 @@ function schedule(ctx,items,start){
     const s=ctx.createBufferSource(), gain=ctx.createGain()
     s.buffer=c.buffer;s.playbackRate.value=c.speed;gain.gain.value=c.volume/100
     s.connect(gain).connect(ctx.destination)
-    s.start(start,c.begin,c.end-c.begin)
-    start+=(c.end-c.begin)/c.speed
+    s.start(start+c.at,c.begin,c.end-c.begin)
     nodes.push(s)
   }
   return nodes
 }
-async function play(items){await context.resume();stop();sources=schedule(context,items,context.currentTime+.04)}
-$('play').onclick=()=>play(clips)
-$('preview').onclick=()=>play([current()])
+async function play(items, origin=0){
+  await context.resume()
+  stop()
+  const start=context.currentTime+.04, length=lengthOf(items), total=lengthOf(arrangement())
+  sources=schedule(context,items,start)
+  function tick(){
+    const t=Math.max(0,context.currentTime-start)
+    showTime(origin+Math.min(t,length),total)
+    if(t<length) frame=requestAnimationFrame(tick)
+    else sources=[]
+  }
+  tick()
+}
+$('play').onclick=()=>play(arrangement())
+$('preview').onclick=()=>{
+  const c=arrangement()[active]
+  play([{...c,at:0}],c.at)
+}
 $('stop').onclick=stop
 $('save').onclick=async()=>{
   try{
-    const rate=context.sampleRate, seconds=clips.reduce((n,c)=>n+(c.end-c.begin)/c.speed,0)
+    const rate=context.sampleRate, items=arrangement(), seconds=lengthOf(items)
     const offline=new OfflineAudioContext(2,Math.ceil(seconds*rate),rate)
-    schedule(offline,clips,0)
+    schedule(offline,items,0)
     const buffer=await offline.startRendering(), size=buffer.length*4
     const bytes=new ArrayBuffer(44+size), v=new DataView(bytes)
     function tag(i,s){for(const ch of s)v.setUint8(i++,ch.charCodeAt(0))}

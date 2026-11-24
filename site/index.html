@@ -3,9 +3,9 @@
 <header><strong>◒ MIXLAB</strong><span>Edytor audio</span></header>
 <main><h1>Twój miks</h1><p>Dodaj nagrania z urządzenia. Pliki są przetwarzane w tej karcie.</p>
 <label class="import">＋ Dodaj pliki audio<input id="files" type="file" accept="audio/*" multiple></label>
-<section><h2>Kolejność klipów</h2><ol id="list"></ol></section>
-<section id="editor" hidden><h2>Edytuj klip</h2><canvas width="1000" height="120" aria-label="Przebieg nagrania z zaznaczonym fragmentem"></canvas><div class="fields">
+<section><h2>Ścieżki miksu</h2><output id="clock"></output><div id="timeline"><div id="lanes"></div><i id="cursor"></i></div><ol id="list"></ol></section>
+<section id="editor" hidden><h2>Edytuj klip</h2><p>Przeciągnij po fali, aby zaznaczyć fragment.</p><canvas width="1000" height="120" aria-label="Przebieg nagrania z zaznaczonym fragmentem"></canvas><button id="trim" disabled>Przytnij do zaznaczenia</button><div class="fields">
 <label>Od (s)<input id="begin" type="number" step="any" min="0"></label><label>Do (s)<input id="end" type="number" step="any" min="0"></label>
-<label>Tempo<select id="speed"><option>0.5</option><option>0.75</option><option>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label>
+<label>Start w miksie (s)<input id="offset" type="number" min="0" step="any" placeholder="Po poprzednim"></label><label>Tempo<select id="speed"><option>0.5</option><option>0.75</option><option>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label>
 <label>Głośność (%)<input id="volume" type="number" min="0" max="100"></label></div><button id="preview">▶ Odsłuch klipu</button></section>
 <footer><button id="play">▶ Odtwórz miks</button><button id="stop">Stop</button><button id="undo">Cofnij</button><button id="save">↓ Eksport WAV</button></footer><p role="status" id="message"></p></main><script src="app.js" defer></script></html>
