@@ -5,14 +5,30 @@ import io
 import math
 import struct
 import wave
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from threading import Thread
+from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--serve', action='store_true', help='Serve site/ for the lifetime of the test process')
 parser.add_argument('--url', default='http://localhost:8213/')
 parser.add_argument('--browser', choices=['chromium', 'firefox'], default='chromium')
 parser.add_argument('--executable')
 parser.add_argument('--cdp', help='Chrome DevTools address, e.g. an adb-forwarded Android device')
 args = parser.parse_args()
+
+if args.serve:
+    class Handler(SimpleHTTPRequestHandler):
+        extensions_map={**SimpleHTTPRequestHandler.extensions_map,
+                        '.js':'text/javascript','.mjs':'text/javascript','.wasm':'application/wasm'}
+        def log_message(self, *args):
+            pass
+    site=Path(__file__).resolve().parents[1]/'site'
+    server=ThreadingHTTPServer(('127.0.0.1',urlsplit(args.url).port or 80),partial(Handler,directory=site))
+    Thread(target=server.serve_forever,daemon=True).start()
 
 def fixture():
     data=io.BytesIO()
@@ -62,14 +78,17 @@ with sync_playwright() as pw:
     dry=export_mix() if not args.cdp else None
     assert not any('/ai-assets/' in url for _,url in requests)
     start()
-    expect(page.locator('#jobStage')).to_contain_text('Separacja ·',timeout=240000)
+    page.wait_for_function("document.querySelector('#stemJob').hidden || document.querySelector('#jobStage').textContent.includes('Separacja ·')",timeout=240000)
+    assert page.locator('#stemJob').is_visible(),page.locator('#message').inner_text()
     page.locator('#cancelJob').click()
     expect(page.locator('#message')).to_have_text('Anulowano separację.')
     expect(page.locator('.wave-clip')).to_have_count(1)
     assert not page.locator('.clip-slot.muted').count()
     start()
     page.wait_for_function("document.querySelector('#stemJob').hidden",timeout=600000)
-    print(page.locator('#message').inner_text(),flush=True)
+    message=page.locator('#message').inner_text()
+    print(message,flush=True)
+    assert 'Dodano wokal' in message,message
     expect(page.locator('.wave-clip')).to_have_count(5)
     expect(page.locator('.clip-slot.muted')).to_have_count(1)
     expect(page.locator('#properties')).to_contain_text('Wokal')

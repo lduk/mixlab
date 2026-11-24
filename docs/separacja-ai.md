@@ -38,6 +38,8 @@ Chromium 156.0.8078.79 na Linuksie x86-64, CPU z limitem czterech rdzeni, ONNX R
 | Louis Cressy Band – Good Time | 11,89 / +17,90 dB | 17,90 / +11,89 dB | 75,9 s | 680 / 1968 MiB |
 | Secretariat – Borderline | 10,18 / +12,71 dB | 12,71 / +10,18 dB | 81,1 s | 691 / 1980 MiB |
 
+W dodatkowym przebiegu SDR obliczony wyłącznie na obszarze przenikania okien (16 384 próbki na kanał wokół 5,18 s) wyniósł odpowiednio **16,37 / 27,73 dB**, **8,53 / 15,63 dB** i **6,03 / 7,49 dB** dla wokalu i podkładu w kolejności tabeli. Najsłabszy wynik w oknie uzyskał fragment „Borderline”. Ten pomiar obejmuje zarówno błąd rozdzielenia źródeł, jak i ewentualne zniekształcenia łączenia.
+
 Maksymalny błąd sumy wokalu i podkładu wyniósł 2,98 × 10⁻⁸ w skali PCM. Czasy obejmują inicjalizację, dwa wywołania modelu i zapis cache. Pierwsza próbka pobierała model z lokalnego serwera HTTP. RSS to suma procesów przeglądarki próbkowana co 100 ms, więc pamięć współdzielona może być liczona kilkukrotnie. Pomiar produkcyjny obejmie również czas pierwszego pobrania przez internet. Wyniki opisują te trzy nagrania. Pogłos, chórki i barwy podobne do wokalu mogą przenikać między ścieżkami.
 
 Test edytora z rzeczywistą inferencją w Chromium objął anulowanie podczas separacji, edycję zaznaczenia, zgodność początków i tempa stemów, filtry, Solo, eksport WAV/MP3, cofnięcie oraz ponowne wykorzystanie cache po przeładowaniu. Test jakości porównuje sygnały numerycznie. Ocena odsłuchowa na szerszym repertuarze i pomiary na fizycznych telefonach pozostają otwarte. Ze względu na koszt czasowy i pamięć moduł udostępnia obecnie tryb dwóch ścieżek. [Testy przeglądarek](https://github.com/lduk/mixlab/actions/workflows/stem-browsers.yml)

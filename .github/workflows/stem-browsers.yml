@@ -7,6 +7,8 @@ on:
       - 'site/stems*.js'
       - 'tests/stem_editor.py'
       - '.github/workflows/stem-browsers.yml'
+env:
+  PYTHONUTF8: 1
 permissions:
   contents: read
 jobs:
@@ -31,8 +33,7 @@ jobs:
       - run: python -m playwright install ${{ matrix.browser }}
       - name: Separate and edit audio in the browser
         run: |
-          python -m http.server 8213 --directory site &
-          python tests/stem_editor.py --browser ${{ matrix.browser }} 2>&1 | tee test.log || { echo "::error::$(tail -c 650 test.log | tr '\n' ' ')"; exit 1; }
+          python tests/stem_editor.py --serve --url http://127.0.0.1:8213/ --browser ${{ matrix.browser }} 2>&1 | tee test.log || { echo "::error::$(tail -c 650 test.log | tr '\n' ' ')"; exit 1; }
           tail -3 test.log >> "$GITHUB_STEP_SUMMARY"
   android:
     runs-on: ubuntu-latest
@@ -51,12 +52,13 @@ jobs:
           sdkmanager "$image"
           echo no | avdmanager create avd --force -n mixlab -k "$image" --device pixel_5
           emulator -avd mixlab -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -memory 4096 > "$RUNNER_TEMP/emulator.log" 2>&1 &
-          adb wait-for-device
-          until adb shell getprop sys.boot_completed | tr -d '\r' | grep -qx 1; do sleep 3; done
+          timeout 180 adb wait-for-device
+          timeout 300 bash -c 'until adb shell getprop sys.boot_completed | grep -q 1; do sleep 3; done'
+          adb shell pm path com.android.chrome | grep -q package:
           adb shell input keyevent 82
           adb shell am set-debug-app --persistent com.android.chrome
           adb shell "echo 'chrome --no-first-run --disable-fre --disable-default-apps' > /data/local/tmp/chrome-command-line"
-          adb shell am start -a android.intent.action.VIEW -d about:blank com.android.chrome
+          adb shell am start -n com.android.chrome/com.google.android.apps.chrome.Main -a android.intent.action.VIEW -d http://127.0.0.1:8213/
           adb reverse tcp:8213 tcp:8213
           adb forward tcp:9222 localabstract:chrome_devtools_remote
           for attempt in {1..60}; do curl -fsS http://localhost:9222/json/version && break; sleep 2; done
@@ -64,6 +66,5 @@ jobs:
       - name: Separate audio in Android Chrome
         shell: bash
         run: |
-          python -m http.server 8213 --directory site &
-          python tests/stem_editor.py --cdp http://127.0.0.1:9222 2>&1 | tee test.log || { echo "::error::$(tail -c 650 test.log | tr '\n' ' ')"; exit 1; }
+          python tests/stem_editor.py --serve --url http://127.0.0.1:8213/ --cdp http://127.0.0.1:9222 2>&1 | tee test.log || { echo "::error::$(tail -c 650 test.log | tr '\n' ' ')"; exit 1; }
           tail -3 test.log >> "$GITHUB_STEP_SUMMARY"
