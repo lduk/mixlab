@@ -129,5 +129,16 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     for event,points in [('touchStart',[{'x':x,'y':y}]),('touchMove',[{'x':x-25,'y':y}]),('touchEnd',[])]:
         touch.send('Input.dispatchTouchEvent',{'type':event,'touchPoints':points})
     assert float(page.locator('#end').input_value())<before
+    # Files providers may report MP3s as generic documents. Open the picker
+    # through the touch control and import the MP3 exported by this session.
+    phone=browser.new_page(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
+    phone.goto('http://localhost:8213')
+    assert phone.locator('#files').get_attribute('accept') is None
+    with phone.expect_file_chooser() as picker:
+        phone.locator('label.import').tap()
+    picker.value.set_files({'name':'nagranie.mp3','mimeType':'application/octet-stream',
+                            'buffer':Path(download.value.path()).read_bytes()})
+    phone.wait_for_selector('#lanes canvas')
+    assert phone.locator('#properties').inner_text()=='nagranie.mp3'
     assert not errors,errors
     print('Acceptance checks passed')
