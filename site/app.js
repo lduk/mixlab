@@ -21,7 +21,18 @@ function showTime(position, total){
   $('clock').textContent=format(position)+' / '+format(total)
   $('cursor').style.left=(100*position/span)+'%'
 }
+let playbackMode = null
+let exporting = false
+function updatePause(){
+  for(const mode of ['Clip','Mix']){
+    const button=$('pause'+mode)
+    button.disabled=playbackMode!==mode
+    button.textContent=playbackMode===mode && context.state==='suspended' ? 'Wznów' : 'Pauza'
+  }
+}
 function stop() {
+  playbackMode=null
+  updatePause()
   cancelAnimationFrame(frame)
   showTime(0,lengthOf(arrangement()))
   sources.forEach(s => s.stop())
@@ -162,11 +173,12 @@ function render(){
   $('editor').hidden=!clips.length
   if(!clips.length) list.textContent='Brak klipów'
   else {
-    for(const key of ['begin','end','speed','volume']) $(key).value=current()[key]
+    for(const key of ['begin','end','speed','volume','fadeIn','fadeOut']) $(key).value=current()[key]
     $('offset').value=current().offset ?? ''
     draw()
   }
-  $('play').disabled=$('save').disabled=!clips.length
+  $('play').disabled=!clips.length
+  updateExports()
   $('undo').disabled=!history.length
 }
 $('files').onchange=async e=>{
@@ -178,16 +190,16 @@ $('files').onchange=async e=>{
       try{
         const buffer=await context.decodeAudioData(await file.arrayBuffer())
         remember()
-        active=clips.push({buffer,name:file.name,begin:0,end:buffer.duration,speed:1,volume:100})-1
+        active=clips.push({buffer,name:file.name,begin:0,end:buffer.duration,speed:1,volume:100,fadeIn:0,fadeOut:0})-1
         render()
       }catch{errors.push(file.name)}
     }
     $('message').textContent=errors.length?'Nie można odczytać: '+errors.join(', '):''
   }finally{input.value='';input.disabled=false}
 }
-for(const key of ['begin','end','speed','volume']) $(key).onchange=()=>{
+for(const key of ['begin','end','speed','volume','fadeIn','fadeOut']) $(key).onchange=()=>{
   const c={...current(),[key]:Number($(key).value)}
-  if($(key).value && c.begin>=0 && c.end<=c.buffer.duration && c.end>c.begin && c.volume>=0 && c.volume<=100){
+  if($(key).value && c.begin>=0 && c.end<=c.buffer.duration && c.end>c.begin && c.volume>=0 && c.volume<=100 && c.fadeIn>=0 && c.fadeOut>=0){
     remember();clips[active]=c;$('message').textContent=''
   }else $('message').textContent='Sprawdź zakres wartości.'
   render()
@@ -234,37 +246,64 @@ function schedule(ctx,items,start){
   for(const c of items){
     const s=ctx.createBufferSource(), gain=ctx.createGain()
     s.buffer=c.buffer;s.playbackRate.value=c.speed;gain.gain.value=c.volume/100
+    const onset=start+c.at, length=duration(c)
+    const scale=Math.min(1,length/(c.fadeIn+c.fadeOut || 1))
+    const attack=c.fadeIn*scale, release=c.fadeOut*scale, level=c.volume/100
+    gain.gain.setValueAtTime(attack ? 0 : level,onset)
+    if(attack) gain.gain.linearRampToValueAtTime(level,onset+attack)
+    if(release){
+      gain.gain.setValueAtTime(level,onset+Math.max(attack,length-release))
+      gain.gain.linearRampToValueAtTime(0,onset+length)
+    }
     s.connect(gain).connect(ctx.destination)
     s.start(start+c.at,c.begin,c.end-c.begin)
     nodes.push(s)
   }
   return nodes
 }
-async function play(items, origin=0){
+async function play(mode, items, origin=0){
   await context.resume()
   stop()
+  playbackMode=mode
+  updatePause()
   const start=context.currentTime+.04, length=lengthOf(items), total=lengthOf(arrangement())
   sources=schedule(context,items,start)
   function tick(){
     const t=Math.max(0,context.currentTime-start)
     showTime(origin+Math.min(t,length),total)
     if(t<length) frame=requestAnimationFrame(tick)
-    else sources=[]
+    else {sources=[];playbackMode=null;updatePause()}
   }
   tick()
 }
-$('play').onclick=()=>play(arrangement())
+$('play').onclick=()=>play('Mix',arrangement())
 $('preview').onclick=()=>{
   const c=arrangement()[active]
-  play([{...c,at:0}],c.at)
+  play('Clip',[{...c,at:0}],c.at)
 }
 $('stop').onclick=stop
-$('save').onclick=async()=>{
-  try{
-    const rate=context.sampleRate, items=arrangement(), seconds=lengthOf(items)
-    const offline=new OfflineAudioContext(2,Math.ceil(seconds*rate),rate)
-    schedule(offline,items,0)
-    const buffer=await offline.startRendering(), size=buffer.length*4
+for(const mode of ['Clip','Mix']){
+  $('pause'+mode).onclick=async()=>{
+    if(playbackMode!==mode)return
+    if(context.state==='running') await context.suspend()
+    else await context.resume()
+    updatePause()
+  }
+}
+function updateExports(){
+  $('save').disabled=$('mp3').disabled=exporting || !clips.length
+}
+function encodeMp3(buffer){
+  const channels=[buffer.getChannelData(0).slice(),buffer.getChannelData(1).slice()]
+  const worker=new Worker('mp3-worker.js')
+  return new Promise((resolve,reject)=>{
+    worker.onmessage=e=>resolve(e.data)
+    worker.onerror=reject
+    worker.postMessage({channels,rate:buffer.sampleRate},channels.map(c=>c.buffer))
+  }).finally(()=>worker.terminate())
+}
+function encodeWav(buffer){
+    const size=buffer.length*4, rate=buffer.sampleRate
     const bytes=new ArrayBuffer(44+size), v=new DataView(bytes)
     function tag(i,s){for(const ch of s)v.setUint8(i++,ch.charCodeAt(0))}
     tag(0,'RIFF');v.setUint32(4,36+size,true);tag(8,'WAVE');tag(12,'fmt ')
@@ -275,9 +314,25 @@ $('save').onclick=async()=>{
       const data=buffer.getChannelData(ch)
       for(let i=0;i<data.length;i++)v.setInt16(44+i*4+2*ch,Math.max(-1,Math.min(1,data[i]))*32767,true)
     }
+    return new Blob([bytes],{type:'audio/wav'})
+}
+async function exportMix(format){
+  exporting=true
+  updateExports()
+  $('message').textContent='Trwa eksport '+format.toUpperCase()+'…'
+  try{
+    const rate=format==='mp3' ? 44100 : context.sampleRate, items=arrangement(), seconds=lengthOf(items)
+    const offline=new OfflineAudioContext(2,Math.ceil(seconds*rate),rate)
+    schedule(offline,items,0)
+    const buffer=await offline.startRendering()
+    const blob=format==='mp3' ? await encodeMp3(buffer) : encodeWav(buffer)
     const a=document.createElement('a')
-    a.href=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'}));a.download='mixlab.wav';a.click()
+    a.href=URL.createObjectURL(blob);a.download='mixlab.'+format;a.click()
+    $('message').textContent='Gotowe.'
     setTimeout(()=>URL.revokeObjectURL(a.href),30000)
   }catch{$('message').textContent='Eksport nie powiódł się. Spróbuj skrócić miks.'}
+  finally{exporting=false;updateExports()}
 }
+$('save').onclick=()=>exportMix('wav')
+$('mp3').onclick=()=>exportMix('mp3')
 render()
