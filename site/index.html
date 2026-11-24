@@ -3,7 +3,7 @@
 <header><strong>◒ MIXLAB</strong><span>Edytor audio</span></header>
 <main><h1>Twój miks</h1><p>Dodaj nagrania z urządzenia. Pliki są przetwarzane w tej karcie.</p>
 <label class="import">＋ Dodaj pliki audio<input id="files" type="file" accept="audio/*" multiple></label>
-<section><h2>Ścieżki miksu</h2><output id="clock"></output><div id="timeline"><div id="lanes"></div><i id="cursor"></i></div><ol id="list"></ol></section>
+<section><h2>Ścieżki miksu</h2><output id="clock"></output><p>Przesuwaj fale, aby ułożyć miks. Przeciągaj uchwyty na brzegach, aby przyciąć nagranie.</p><label>Powiększenie <select id="zoom"><option>1</option><option>2</option><option>4</option><option>16</option><option>64</option></select> ×</label><div class="timeline-scroll"><div id="timeline"><div id="ruler"></div><div id="lanes"></div><i id="cursor"></i></div></div><output id="range"></output><ol id="list"></ol></section>
 <section id="editor" hidden><h2>Edytuj klip</h2><p>Przeciągnij po fali, aby zaznaczyć fragment.</p><canvas width="1000" height="120" aria-label="Przebieg nagrania z zaznaczonym fragmentem"></canvas><button id="trim" disabled>Przytnij do zaznaczenia</button><div class="fields">
 <label>Od (s)<input id="begin" type="number" step="any" min="0"></label><label>Do (s)<input id="end" type="number" step="any" min="0"></label>
 <label>Start w miksie (s)<input id="offset" type="number" min="0" step="any" placeholder="Po poprzednim"></label><label>Tempo<select id="speed"><option>0.5</option><option>0.75</option><option>1</option><option>1.25</option><option>1.5</option><option>2</option></select></label>
