@@ -59,15 +59,24 @@ export function transitions(items, enabled) {
   })
 }
 
+export function transitionGain(phase, inward, linear) {
+  const gain = inward ? phase : 1-phase
+  return linear ? gain : Math.sin(gain*Math.PI/2)
+}
+
+export function fadeScale(c) {
+  const sum = c.fadeIn + c.fadeOut
+  return sum > duration(c) ? duration(c) / sum : 1
+}
+
 export function envelope(c,t) {
   const length=duration(c)
-  const scale=Math.min(1,length/(c.fadeIn+c.fadeOut || 1))
+  const scale=fadeScale(c)
   let level=Math.min(1,c.fadeIn ? t/(c.fadeIn*scale) : 1,c.fadeOut ? (length-t)/(c.fadeOut*scale) : 1)
   for (const tr of c.transitions ?? []) {
     if(t<tr.start || t>tr.start+tr.overlap) continue
     const phase=Math.min(1,(t-tr.start)/tr.length)
-    const gain=tr.inward ? phase : 1-phase
-    level*=tr.linear ? gain : Math.sin(gain*Math.PI/2)
+    level*=transitionGain(phase,tr.inward,tr.linear)
   }
   return Math.max(0,level)
 }
@@ -96,9 +105,9 @@ export function schedule(ctx,items,start,from,to) {
     source.playbackRate.value=speed
     const onset=start+first-from, local=first-c.at
     const points=new Set([local,last-c.at])
-    const fadeScale=Math.min(1,duration(c)/(c.fadeIn+c.fadeOut || 1))
-    points.add(c.fadeIn*fadeScale)
-    points.add(duration(c)-c.fadeOut*fadeScale)
+    const scale=fadeScale(c)
+    points.add(c.fadeIn*scale)
+    points.add(duration(c)-c.fadeOut*scale)
     for(const tr of c.transitions){
       for(let i=0;i<=48;i++) points.add(tr.start+tr.length*i/48)
       points.add(tr.start+tr.overlap)

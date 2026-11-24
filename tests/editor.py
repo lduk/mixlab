@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
         item.fill(str(value))
         item.press('Tab')
     def export():
+        page.locator('#exportMenu').click()
         with page.expect_download() as download:
             page.locator('#save').click()
         with wave.open(str(download.value.path())) as audio:
@@ -50,6 +51,26 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
         x=box['x']+box['width']/2
         y=box['y']+box['height']*.65
         page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+dx,y+dy,steps=8);page.mouse.up()
+    # Place a fade at six seconds on a ten-second clip and adjust its visible marker.
+    page.locator('button[data-mode=fade]').click()
+    bar=page.locator('#lanes button').first
+    bar.click(position={'x':round(bar.bounding_box()['width']*.6),'y':38})
+    assert abs(float(page.locator('#fadeOut').input_value())-4)<.05
+    rate,signal=export()
+    def peak(seconds):
+        start=int(seconds*rate)
+        return max(signal[start:start+rate//50])
+    assert .96<peak(5.9)/peak(1)<1.04
+    assert .46<peak(8)/peak(1)<.54
+    assert peak(9.95)<peak(1)*.03
+    page.locator('button[data-mode=move]').click()
+    gesture(bar.locator('.fade-start'),-bar.bounding_box()['width']*.2)
+    assert abs(float(page.locator('#fadeOut').input_value())-6)<.05
+    assert page.locator('#offset').input_value()==''
+    page.locator('#undo').click()
+    assert abs(float(page.locator('#fadeOut').input_value())-4)<.05
+    page.locator('#undo').click()
+    assert page.locator('#fadeOut').input_value()=='0'
     edge=page.locator('[data-edge=right]').first
     gesture(edge,-70)
     assert float(page.locator('#end').input_value())<10
@@ -77,7 +98,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     assert plain==signal
     page.locator('#undo').click()
     assert page.locator('#auto').is_checked()
-    page.locator('#mode').select_option('stretch')
+    page.locator('button[data-mode=stretch]').click()
     gesture(page.locator('[data-track="1"] [data-edge=right]').last,-30)
     assert float(page.locator('#speed').input_value())>100
     ruler=page.locator('#ruler')
@@ -90,13 +111,14 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     page.locator('#stop').click()
     page.locator('#split').click()
     assert page.locator('#lanes canvas').count()==3
+    page.locator('#exportMenu').click()
     with page.expect_download() as download:
         page.locator('#mp3').click()
     assert download.value.suggested_filename.endswith('.mp3')
     page.set_viewport_size({'width':740,'height':360})
     page.locator('#lanes button').first.tap()
     assert page.locator('#properties').inner_text()=='440.wav'
-    page.locator('#mode').select_option('trim')
+    page.locator('button[data-mode=trim]').click()
     handle=page.locator('[data-edge=right]').first
     handle.scroll_into_view_if_needed()
     box=handle.bounding_box()

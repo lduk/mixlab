@@ -1,4 +1,4 @@
-import {duration, transitions, envelope, prepare, schedule} from './audio.js'
+import {duration, transitions, transitionGain, fadeScale, envelope, prepare, schedule} from './audio.js'
 const $ = id => document.getElementById(id)
 let clips = [], history = [], active = 0, context, sources = []
 const current = () => clips[active]
@@ -54,14 +54,86 @@ function draw() {
   const canvas = document.querySelector('#editor canvas'), g = canvas.getContext('2d')
   const c = current(), data = c.buffer.getChannelData(0)
   g.clearRect(0,0,1000,120)
-  g.fillStyle = '#394b32'
+  g.fillStyle = '#30445b'
   g.fillRect(1000*(selection?.begin ?? c.begin)/c.buffer.duration,0,1000*((selection?.end ?? c.end)-(selection?.begin ?? c.begin))/c.buffer.duration,120)
-  g.fillStyle = '#c5f16a'
+  g.fillStyle = '#a6d5e9'
   for(let x=0;x<1000;x++){
     const start=Math.floor(x*data.length/1000), width=Math.ceil(data.length/1000)
     let peak=0
     for(let j=start;j<Math.min(data.length,start+width);j+=Math.max(1,Math.floor(width/64))) peak=Math.max(peak,Math.abs(data[j]))
     g.fillRect(x,60-peak*57,1,Math.max(1,peak*114))
+  }
+}
+let mode = 'move'
+const hints = {
+  move: 'Przeciągnij klip wzdłuż osi lub na inną ścieżkę.',
+  trim: 'Przeciągnij lewą lub prawą krawędź klipu, aby go przyciąć.',
+  stretch: 'Przeciągnij krawędź klipu, aby zmienić tempo.',
+  fade: 'Kliknij na fali początek wyciszenia. Przesuń złoty punkt, aby go dopasować.'
+}
+function selectMode(value) {
+  mode = value
+  $('timeline').dataset.mode = mode
+  $('hint').textContent = hints[mode]
+  for (const button of $('modes').querySelectorAll('button')) {
+    button.setAttribute('aria-pressed',button.dataset.mode === mode)
+  }
+}
+for (const button of $('modes').querySelectorAll('button')) {
+  button.onclick = () => selectMode(button.dataset.mode)
+}
+selectMode(mode)
+
+function showFormats(open) {
+  $('formats').hidden = !open
+  $('exportMenu').setAttribute('aria-expanded',open)
+}
+$('exportMenu').onclick = () => showFormats($('formats').hidden)
+document.addEventListener('click', event => {
+  if (!event.target.closest('.exports')) showFormats(false)
+})
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !$('formats').hidden) {
+    showFormats(false)
+    $('exportMenu').focus()
+  }
+})
+
+function editFadeStart(event, bar, clip, index, marker) {
+  const width = bar.getBoundingClientRect().width
+  const left = bar.getBoundingClientRect().left
+  const length = duration(clip)
+  const scale = fadeScale(clip)
+  const start = length - clip.fadeOut * scale
+  const draft = {...clip}
+  let point = start
+  bar.setPointerCapture(event.pointerId)
+  function preview(x) {
+    const time = marker ? start + (x-event.clientX)*length/width : (x-left)*length/width
+    point = Math.max(0,Math.min(length,Math.round(time*1000)/1000))
+    draft.fadeOut = length-point
+    draft.fadeIn = Math.min(clip.fadeIn*scale,point)
+    paintClip(bar,draft)
+    $('range').textContent = 'Początek wyciszenia '+format(clip.at+point)+' · długość '+format(draft.fadeOut)
+  }
+  function finish() {
+    bar.onpointermove = bar.onpointerup = bar.onpointercancel = null
+    render()
+  }
+  if (!marker) preview(event.clientX)
+  bar.onpointermove = e => {if(e.pointerId===event.pointerId) preview(e.clientX)}
+  bar.onpointercancel = finish
+  bar.onpointerup = e => {
+    if(e.pointerId!==event.pointerId)return
+    if(!marker || e.clientX!==event.clientX) preview(e.clientX)
+    if(draft.fadeOut!==clip.fadeOut || draft.fadeIn!==clip.fadeIn) {
+      remember()
+      clips[index].fadeIn = draft.fadeIn
+      clips[index].fadeOut = draft.fadeOut
+    }
+    active = index
+    finish()
+    $('range').textContent = 'Początek wyciszenia '+format(clip.at+point)+' · długość '+format(draft.fadeOut)
   }
 }
 function paintClip(bar,c){
@@ -70,7 +142,15 @@ function paintClip(bar,c){
   const canvas=bar.querySelector('canvas'), g=canvas.getContext('2d')
   const data=c.buffer.getChannelData(0), rate=c.buffer.sampleRate
   g.clearRect(0,0,canvas.width,canvas.height)
-  g.fillStyle='#c5f16a'
+  const length=duration(c)
+  const boundary=1-c.fadeOut*fadeScale(c)/length
+  const marker=bar.querySelector('.fade-start')
+  marker.hidden=c.fadeOut<=0
+  marker.style.left=(100*boundary)+'%'
+  marker.title='Początek wyciszenia '+format(c.at+length*boundary)
+  g.fillStyle='#ffcd6a22'
+  g.fillRect(boundary*canvas.width,0,(1-boundary)*canvas.width,44)
+  g.fillStyle='#d5e9f2'
   const samples=(c.end-c.begin)*rate/canvas.width
   for(let x=0;x<canvas.width;x++){
     let peak=0
@@ -81,7 +161,18 @@ function paintClip(bar,c){
   }
   for(const tr of c.transitions ?? []){
     g.fillStyle='#a480ff55'
-    g.fillRect(canvas.width*tr.start/duration(c),0,canvas.width*tr.length/duration(c),44)
+    const xStart=canvas.width*tr.start/length
+    const width=canvas.width*tr.length/length
+    g.fillRect(xStart,0,width,44)
+    g.beginPath()
+    for(let step=0;step<=32;step++){
+      const phase=step/32
+      const gain=transitionGain(phase,!tr.inward,tr.linear)
+      g.lineTo(xStart+phase*width,42-40*gain)
+    }
+    g.strokeStyle='#ffe5a7aa'
+    g.lineWidth=1.5
+    g.stroke()
   }
   g.beginPath()
   for(let x=0;x<=canvas.width;x+=4){
@@ -96,11 +187,14 @@ function renderTimeline(items){
   timeline.style.width=(100*zoom)+'%'
   const ruler=$('ruler')
   ruler.replaceChildren()
-  const ticks=Math.max(1,Math.floor(timeline.clientWidth/100))
-  for(let i=0;i<ticks;i++){
+  const ideal=span*90/Math.max(1,timeline.clientWidth)
+  const magnitude=10**Math.floor(Math.log10(ideal))
+  const step=magnitude*[1,2,5,10].find(n=>n*magnitude>=ideal)
+  timeline.style.setProperty('--grid',(100*step/span)+'%')
+  for(let i=0;i*step<span;i++){
     const tick=document.createElement('span')
-    tick.textContent=format(span*i/ticks)
-    tick.style.left=(100*i/ticks)+'%'
+    tick.textContent=format(i*step)
+    tick.style.left=(100*i*step/span)+'%'
     ruler.append(tick)
   }
   $('range').textContent=''
@@ -121,7 +215,8 @@ function renderTimeline(items){
     ends[row]=clip.at+duration(clip)
     const bar=document.createElement('button')
     const label=document.createElement('span'),canvas=document.createElement('canvas')
-    label.textContent=clip.name
+    label.textContent=clip.name+' · '+Number((clip.speed*100).toFixed(1))+'%'
+    bar.dataset.color=index%4
     canvas.width=800
     canvas.height=44
     bar.append(label,canvas)
@@ -131,6 +226,9 @@ function renderTimeline(items){
       handle.title=({left:'Lewa krawędź',right:'Prawa krawędź',fadeIn:'Narastanie',fadeOut:'Wygaszanie'})[edge]
       bar.append(handle)
     }
+    const marker=document.createElement('i')
+    marker.className='fade-start'
+    bar.append(marker)
     bar.setAttribute('aria-pressed',index===active)
     lane.append(bar)
     bar.style.top=(23+row*66)+'px'
@@ -140,6 +238,11 @@ function renderTimeline(items){
     bar.onpointerdown=e=>{
       if(e.button!==0 || !e.isPrimary)return
       const edge=e.target.dataset.edge, origin=e.clientX
+      const marker=e.target.classList.contains('fade-start')
+      if(mode==='fade' || marker) {
+        editFadeStart(e,bar,clip,index,marker)
+        return
+      }
       const scale=span/timeline.getBoundingClientRect().width
       let draft={...clip}, moved=false
       bar.setPointerCapture(e.pointerId)
@@ -150,7 +253,6 @@ function renderTimeline(items){
         moved=true
         const delta=Math.round(dx*scale*1000)/1000
         const minimum=1/clip.buffer.sampleRate
-        const mode=$('mode').value
         const side=edge || (origin < bar.getBoundingClientRect().left+bar.clientWidth/2 ? 'left' : 'right')
         if(edge==='fadeIn' || edge==='fadeOut'){
           draft[edge]=Math.max(0,Math.min(duration(clip),clip[edge]+delta*(edge==='fadeIn'?1:-1)))
@@ -207,7 +309,8 @@ function render(){
   drag=null
   $('trim').disabled=true
   const items=arrangement(), total=lengthOf(items)
-  span=Math.max(0.01,total*1.25)
+  span=total ? Math.max(0.01,total*1.25) : 30
+  $('clipList').hidden=!clips.length
   cursor=Math.min(cursor,total)
   if(!sources.length) showTime(cursor,total)
   paintLoop()
@@ -434,7 +537,7 @@ for(const mode of ['Clip','Mix']){
   }
 }
 function updateExports(){
-  $('save').disabled=$('mp3').disabled=exporting || !clips.length
+  $('exportMenu').disabled=$('save').disabled=$('mp3').disabled=exporting || !clips.length
 }
 function encodeMp3(buffer){
   const channels=[buffer.getChannelData(0).slice(),buffer.getChannelData(1).slice()]
@@ -460,6 +563,7 @@ function encodeWav(buffer){
     return new Blob([bytes],{type:'audio/wav'})
 }
 async function exportMix(format){
+  showFormats(false)
   exporting=true
   updateExports()
   $('message').textContent='Trwa eksport '+format.toUpperCase()+'…'
