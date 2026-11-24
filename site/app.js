@@ -1,3 +1,4 @@
+import {modelCached, deviceLimit, separateClip} from './stems.js'
 import {effects, effectBuffer} from './effects.js'
 import {estimateBpm} from './bpm.js'
 import {duration, transitions, transitionGain, fadeScale, envelope, prepare, schedule, mixPeak} from './audio.js'
@@ -349,6 +350,13 @@ function renderTimeline(items){
     lane.style.height=(25+ends.length*126)+'px'
     paintClip(bar,clip)
     bar.onclick=e=>{if(e.detail===0){active=index;render()}}
+    bar.oncontextmenu=e=>{
+      e.preventDefault()
+      active=index
+      render()
+      $('clipMenu').open=true
+      $('clipMenu').querySelector('summary').focus()
+    }
     bar.onpointerdown=e=>{
       if(e.button!==0 || !e.isPrimary)return
       const edge=e.target.dataset.edge, origin=e.clientX
@@ -465,6 +473,17 @@ function render(){
     $('curve').value=current().curve
     $('crossLength').value=current().crossLength ?? ''
     $('properties').textContent=current().name
+    $('filter').value=current().filter || ''
+    $('solo').setAttribute('aria-pressed',Boolean(current().solo))
+    $('openStems').disabled=Boolean(stemJob || current().group)
+    $('stemGroup').hidden=!current().group
+    if(current().group){
+      const group=items.filter(c=>c.group===current().group)
+      $('groupName').textContent='Grupa · '+current().groupName
+      $('groupStart').value=Number(Math.min(...group.map(c=>c.at)).toFixed(6))
+      $('groupFactor').value=100
+      $('groupStatus').textContent=''
+    }
     $('length').textContent='Długość '+format(duration(current()))
     $('offset').value=current().offset ?? ''
     draw()
@@ -769,14 +788,14 @@ async function play(mode,items,origin,from,to,repeat=false){
     // The user can adjust a clip while pitch-preserving audio is being prepared.
     function syncLevel(c){
       c.volume=clips[c.index].volume
-      c.muted=clips[c.index].muted
+      c.muted=clips[c.index].muted || (mode==='Mix' && soloMutes(clips[c.index]))
     }
     items.forEach(syncLevel)
     let applyLevels
     updateLiveLevel=index=>{
       const clip=items.find(c=>c.index===index)
       if(clip){
-        syncLevel(clip)
+        items.forEach(syncLevel)
         applyLevels()
       }
     }
@@ -850,7 +869,7 @@ async function play(mode,items,origin,from,to,repeat=false){
   }
 }
 $('play').onclick=()=>{
-  const items=arrangement(),total=lengthOf(items)
+  const items=mixItems(),total=lengthOf(items)
   const repeat=$('loop').checked && loopRange && Math.min(total,loopRange[1])>loopRange[0]
   play('Mix',items,0,repeat?loopRange[0]:cursor<total?cursor:0,repeat?Math.min(total,loopRange[1]):total,repeat)
 }
@@ -867,7 +886,10 @@ for(const mode of ['Clip','Mix']){
     updatePause()
   }
 }
+function soloMutes(clip){return !clip.solo && clips.some(c=>c.solo && !c.muted)}
+function mixItems(){return arrangement().map(c=>({...c,muted:c.muted || soloMutes(c)}))}
 function updateExports(){
+  $('clipWav').disabled=$('clipMp3').disabled=exporting || !clips.length
   $('exportMenu').disabled=$('save').disabled=$('mp3').disabled=exporting || !clips.length
 }
 function encodeMp3(buffer){
@@ -893,25 +915,151 @@ function encodeWav(buffer){
     }
     return new Blob([bytes],{type:'audio/wav'})
 }
-async function exportMix(format){
+async function exportMix(format,clipOnly=false){
   showFormats(false)
   exporting=true
   updateExports()
   $('message').textContent='Trwa eksport '+format.toUpperCase()+'…'
   try{
-    const rate=format==='mp3' ? 44100 : context.sampleRate, items=arrangement(), seconds=lengthOf(items)
+    const selected=current()
+    const items=clipOnly ? [{...selected,at:0,muted:false,transitions:[]}] : mixItems()
+    const rate=format==='mp3' ? 44100 : context.sampleRate, seconds=lengthOf(items)
     const offline=new OfflineAudioContext(2,Math.ceil(seconds*rate),rate)
     await prepare(items.filter(c=>!c.muted))
     schedule(offline,items,0,0,seconds)
     const buffer=await offline.startRendering()
     const blob=format==='mp3' ? await encodeMp3(buffer) : encodeWav(buffer)
     const a=document.createElement('a')
-    a.href=URL.createObjectURL(blob);a.download='mixlab.'+format;a.click()
+    a.href=URL.createObjectURL(blob);a.download=(clipOnly ? selected.name : 'mixlab')+'.'+format;a.click()
     $('message').textContent='Gotowe.'
     setTimeout(()=>URL.revokeObjectURL(a.href),30000)
   }catch{$('message').textContent='Eksport nie powiódł się. Spróbuj skrócić miks.'}
   finally{exporting=false;updateExports()}
 }
+let stemJob=null
+let inputRange=null
+function showStemScope(){
+  const range=$('stemScope').value==='selection' ? inputRange : current()
+  const issue=range ? deviceLimit(range.end-range.begin) : 'Najpierw zaznacz fragment na fali klipu.'
+  $('stemStatus').textContent=issue || 'Czas źródłowy '+format(range.begin)+' – '+format(range.end)
+  $('startStems').disabled=Boolean(issue)
+}
+$('openStems').onclick=async()=>{
+  const c=current()
+  if(!c || c.group || stemJob)return
+  const begin=Math.max(c.begin,selection?.begin ?? c.end),end=Math.min(c.end,selection?.end ?? c.begin)
+  inputRange=end-begin>=1/c.buffer.sampleRate ? {begin,end} : null
+  $('stemScope').options[1].disabled=!inputRange
+  $('stemScope').value=inputRange ? 'selection' : 'clip'
+  $('stemSource').textContent=c.name
+  showStemScope()
+  $('stemDialog').showModal()
+  const cached=await modelCached()
+  $('stemDownload').textContent=cached
+    ? 'Model UVR-MDXNET Main · 66,8 MB w pamięci lokalnej.'
+    : 'Model UVR-MDXNET Main · 66,8 MB do pobrania. Pierwsze użycie wymaga też silnika ONNX (~24 MB).'
+}
+$('stemScope').onchange=showStemScope
+$('closeStems').onclick=()=>$('stemDialog').close()
+$('cancelJob').onclick=()=>stemJob?.abort()
+
+function insertStems(source,begin,end,result){
+  const index=clips.indexOf(source), items=arrangement()
+  if(index<0 || begin<source.begin || end>source.end || source.group)
+    throw Error('Klip zmienił się podczas separacji. Wybierz go ponownie, aby użyć wyniku.')
+  const clip=items[index], group=crypto.randomUUID()
+  const partial=begin>clip.begin || end<clip.end
+  const common={...source,group,groupName:source.name,muted:false}
+  const additions=[]
+  const at=time=>clip.at+(time-clip.begin)/clip.speed
+  let track=nextTrack
+  // Preserve the source envelope across a partial cut, including the slopes
+  // already in progress at either boundary. Store time in source coordinates.
+  const inherited=(partial || clip.transitions.length) ? {
+    begin:clip.begin,end:clip.end,speed:clip.speed,fadeIn:clip.fadeIn,fadeOut:clip.fadeOut,
+    attackCurve:clip.attackCurve,transitions:clip.transitions
+  } : null
+  function piece(role,name,buffer,first,last,origin,lane){
+    additions.push({...common,name:source.name+' · '+name,stemRole:role,track:lane,buffer,
+      begin:first,end:last,offset:at(origin+first),sourceOrigin:origin,inherited,
+      fadeIn:inherited ? 0 : source.fadeIn,fadeOut:inherited ? 0 : source.fadeOut})
+  }
+  for(const [role,name] of [['vocals','Wokal'],['accompaniment','Podkład']]){
+    piece(role,name,result[role],0,result[role].duration,begin,track++)
+  }
+  if(partial){
+    if(clip.begin<begin)piece('remainder','Przed zaznaczeniem',source.buffer,clip.begin,begin,0,track)
+    if(end<clip.end)piece('remainder','Po zaznaczeniu',source.buffer,end,clip.end,0,track)
+    track++
+  }
+  remember()
+  items.forEach((item,i)=>{clips[i].offset=item.at})
+  Object.assign(source,{group,groupName:source.name,stemRole:'original',muted:true,solo:false})
+  active=clips.length
+  clips.push(...additions)
+  nextTrack=track
+}
+
+$('startStems').onclick=async()=>{
+  if(stemJob || !current())return
+  const source=current()
+  const {begin,end}=$('stemScope').value==='selection' ? inputRange : source
+  const job=new AbortController()
+  stemJob=job
+  $('stemDialog').close()
+  $('openStems').disabled=true
+  $('stemJob').hidden=false
+  $('jobTitle').textContent=source.name
+  function progress({stage,done,total}){
+    const bar=$('jobProgress')
+    let label=stage
+    if(total){
+      bar.max=total
+      bar.value=done
+      label+=stage==='Pobieranie wag' ? ' · '+(done/1e6).toFixed(1)+' / '+(total/1e6).toFixed(1)+' MB' : ' · '+done+' / '+total+' segmentów'
+    }else bar.removeAttribute('value')
+    $('jobStage').textContent=label
+  }
+  try{
+    const result=await separateClip(source.buffer,begin,end,job.signal,progress)
+    job.signal.throwIfAborted()
+    insertStems(source,begin,end,result)
+    $('message').textContent='Dodano wokal i podkład · '+result.backend+' · '+result.seconds.toFixed(1)+' s. '+
+      (result.stored ? 'Wynik zapisany lokalnie.' : 'Wynik jest dostępny w tej sesji.')
+  }catch(error){
+    $('message').textContent=job.signal.aborted ? 'Anulowano separację.' : error.message
+  }finally{
+    stemJob=null
+    $('stemJob').hidden=true
+    render()
+  }
+}
+$('applyGroup').onclick=()=>{
+  const items=arrangement(),group=items.filter(c=>c.group===current().group)
+  const start=$('groupStart').valueAsNumber,factor=$('groupFactor').valueAsNumber/100
+  if(!Number.isFinite(start) || start<0 || !Number.isFinite(factor) ||
+      group.some(c=>c.speed*factor<.25 || c.speed*factor>4)){
+    $('groupStatus').textContent='Podaj start od 0 s i tempo, które utrzyma wszystkie klipy w zakresie 25–400%.'
+    return
+  }
+  const anchor=Math.min(...group.map(c=>c.at))
+  remember()
+  items.forEach((item,i)=>{clips[i].offset=item.at})
+  for(const c of group){
+    const item=clips[c.index]
+    item.offset=start+(c.at-anchor)/factor
+    item.speed=c.speed*factor
+    item.fadeIn/=factor
+    item.fadeOut/=factor
+    if(item.crossLength!=null)item.crossLength/=factor
+  }
+  render()
+}
+
+$('clipWav').onclick=()=>exportMix('wav',true)
+$('clipMp3').onclick=()=>exportMix('mp3',true)
+$('filter').onchange=()=>{remember();current().filter=$('filter').value;render()}
+$('solo').onclick=()=>{remember();current().solo=!current().solo;render()}
 $('save').onclick=()=>exportMix('wav')
 $('mp3').onclick=()=>exportMix('mp3')
 render()

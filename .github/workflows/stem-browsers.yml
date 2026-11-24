@@ -1,0 +1,65 @@
+name: Stem browser checks
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'site/stems*.js'
+      - 'tests/stem_editor.py'
+      - '.github/workflows/stem-browsers.yml'
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            browser: chromium
+          - os: ubuntu-latest
+            browser: firefox
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/prepare-stems.sh
+      - run: python -m pip install playwright
+      - run: python -m playwright install ${{ matrix.browser }}
+      - name: Separate and edit audio in the browser
+        run: |
+          python -m http.server 8213 --directory site &
+          python tests/stem_editor.py --browser ${{ matrix.browser }}
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/prepare-stems.sh
+      - run: python -m pip install playwright
+      - name: Start Android with Chrome
+        shell: bash
+        run: |
+          sudo chmod a+rw /dev/kvm
+          image='system-images;android-35;google_apis_playstore;x86_64'
+          sdkmanager "$image"
+          echo no | avdmanager create avd --force -n mixlab -k "$image" --device pixel_5
+          export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          emulator -avd mixlab -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -memory 4096 > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          adb wait-for-device
+          until adb shell getprop sys.boot_completed | tr -d '\r' | grep -qx 1; do sleep 3; done
+          adb shell input keyevent 82
+          adb shell am set-debug-app --persistent com.android.chrome
+          adb shell "echo 'chrome --no-first-run --disable-fre --disable-default-apps' > /data/local/tmp/chrome-command-line"
+          adb shell am start -a android.intent.action.VIEW -d about:blank com.android.chrome
+          adb reverse tcp:8213 tcp:8213
+          adb forward tcp:9222 localabstract:chrome_devtools_remote
+          for attempt in {1..60}; do curl -fsS http://localhost:9222/json/version && break; sleep 2; done
+          curl -fsS http://localhost:9222/json/version
+      - name: Separate audio in Android Chrome
+        run: |
+          python -m http.server 8213 --directory site &
+          python tests/stem_editor.py --cdp http://127.0.0.1:9222

@@ -79,6 +79,10 @@ export function envelope(c,t) {
     const phase=Math.min(1,(t-tr.start)/tr.length)
     level*=transitionGain(phase,tr.inward,tr.linear)
   }
+  if(c.inherited){
+    const sourceTime=c.sourceOrigin+c.begin+t*c.speed
+    level*=envelope(c.inherited,(sourceTime-c.inherited.begin)/c.inherited.speed)
+  }
   return Math.max(0,level)
 }
 
@@ -89,14 +93,44 @@ export async function prepare(items) {
 }
 
 export function mixPeak(items) {
-  // Conservative headroom based on the largest simultaneous sum of clip gains.
-  const edges=items.flatMap(c=>[[c.at,c.volume/100],[c.at+duration(c),-c.volume/100]])
-  let sum=0, peak=1
-  for(const [,gain] of edges.sort((a,b)=>a[0]-b[0] || a[1]-b[1])) {
-    sum+=gain
+  // Synchronous complementary stems reconstruct a single source. Reserve
+  // one share of headroom for that pair. Independently moved layers add up.
+  const edges=[]
+  for(const c of items){
+    if(c.stemRole==='original' && c.muted)continue
+    const paired=c.stemRole==='vocals' || c.stemRole==='accompaniment'
+    const key=paired ? [c.group,c.speed,c.at-c.begin/c.speed,c.preserve].join('/') : null
+    for(const [t,sign] of [[c.at,1],[c.at+duration(c),-1]]){
+      edges.push({t,delta:sign*c.volume/100,key,role:c.stemRole})
+    }
+  }
+  let sum=0,peak=1
+  const groups=new Map()
+  for(const {delta,key,role} of edges.sort((a,b)=>a.t-b.t || a.delta-b.delta)){
+    if(key){
+      const gains=groups.get(key) || {vocals:0,accompaniment:0}
+      const previous=Math.max(gains.vocals,gains.accompaniment)
+      gains[role]+=delta
+      sum+=Math.max(gains.vocals,gains.accompaniment)-previous
+      groups.set(key,gains)
+    }else sum+=delta
     peak=Math.max(peak,sum)
   }
   return peak
+}
+
+function envelopePoints(c,add,rate){
+  const scale=fadeScale(c)
+  if(c.fadeIn && c.attackCurve==='equal'){
+    for(let i=1;i<32;i++)add(c.fadeIn*scale*i/32)
+  }
+  add(c.fadeIn*scale)
+  add(duration(c)-c.fadeOut*scale)
+  for(const tr of c.transitions ?? []){
+    for(let i=0;i<=48;i++) add(tr.start+tr.length*i/48)
+    add(tr.start+tr.overlap)
+    add(tr.start+tr.overlap+1/rate)
+  }
 }
 
 export function schedule(ctx,items,start,from,to,connectLiveOutput) {
@@ -111,16 +145,10 @@ export function schedule(ctx,items,start,from,to,connectLiveOutput) {
     source.playbackRate.value=speed
     const onset=start+first-from, local=first-c.at
     const points=new Set([local,last-c.at])
-    const scale=fadeScale(c)
-    if(c.fadeIn && c.attackCurve==='equal'){
-      for(let i=1;i<32;i++)points.add(c.fadeIn*scale*i/32)
-    }
-    points.add(c.fadeIn*scale)
-    points.add(duration(c)-c.fadeOut*scale)
-    for(const tr of c.transitions){
-      for(let i=0;i<=48;i++) points.add(tr.start+tr.length*i/48)
-      points.add(tr.start+tr.overlap)
-      points.add(tr.start+tr.overlap+1/ctx.sampleRate)
+    envelopePoints(c,t=>points.add(t),ctx.sampleRate)
+    if(c.inherited){
+      const parent=c.inherited
+      envelopePoints(parent,t=>points.add((parent.begin+t*parent.speed-c.sourceOrigin-c.begin)/c.speed),ctx.sampleRate)
     }
     const level=c.volume/100/peak
     for(const t of [...points].filter(t=>t>=local && t<=last-c.at).sort((a,b)=>a-b)){
@@ -128,7 +156,13 @@ export function schedule(ctx,items,start,from,to,connectLiveOutput) {
       if(t===local) gain.gain.setValueAtTime(value,onset)
       else gain.gain.linearRampToValueAtTime(value,onset+t-local)
     }
-    source.connect(gain)
+    if(c.filter){
+      const filter=ctx.createBiquadFilter()
+      filter.type=c.filter
+      filter.frequency.value=c.filter==='highpass' ? 100 : 3500
+      filter.Q.value=Math.SQRT1_2
+      source.connect(filter).connect(gain)
+    }else source.connect(gain)
     if(connectLiveOutput)connectLiveOutput(gain,c,level)
     else gain.connect(ctx.destination)
     source.start(onset,(c.processed ? 0 : c.begin)+local*speed,(last-first)*speed)

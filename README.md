@@ -6,7 +6,11 @@ Lokalny edytor nagrań działający w przeglądarce. Uruchom w katalogu projektu
 python3 -m http.server 8213 --directory site
 ```
 
-Otwórz port 8213 w przeglądarce. Do publikacji wystarcza zawartość katalogu `site/`. Workflow w `.github/workflows/pages.yml` publikuje ten katalog po wysłaniu zmian na `main`. Pliki audio pozostają w pamięci karty. Odświeżenie strony usuwa sesję.
+Otwórz port 8213 w przeglądarce. Do publikacji wystarcza zawartość katalogu `site/`. Workflow w `.github/workflows/pages.yml` publikuje ten katalog po wysłaniu zmian na `main`. Odświeżenie strony usuwa sesję edytora. Pobrane wagi AI i wyniki separacji mogą pozostać w lokalnym cache witryny.
+
+## Separacja wokalu i podkładu
+
+Wybierz klip i otwórz **Opcje klipu → Rozdziel na ścieżki AI**. Możesz rozdzielić cały klip lub fragment zaznaczony na jego fali. W domyślnym wdrożeniu Pages wagi i silnik są gotowe do pobrania na żądanie. Przy uruchamianiu lokalnym przygotuj je jednorazowo poleceniem `bash scripts/prepare-stems.sh`. [Instrukcja, licencje, ograniczenia i pomiary](docs/separacja-ai.md)
 
 ## Montaż
 

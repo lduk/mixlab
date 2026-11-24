@@ -111,3 +111,16 @@ li button:first-child{flex:1;text-align:left;overflow-wrap:anywhere}
 #effectList>div{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:6px 0;border-top:1px solid var(--line)}
 #effectList button[aria-pressed=true]{color:#84d9b7}
 #effectStatus:empty{display:none}
+
+.clip-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px}
+#stemGroup{border:1px solid var(--line);border-radius:10px;margin:16px 0 0;padding:12px}
+#stemGroup .fields{margin:0}
+#stemDialog{width:min(94vw,520px);max-height:90vh;overflow:auto;border:1px solid #506072;border-radius:16px;padding:22px;background:var(--panel);color:inherit}
+#stemDialog::backdrop{background:#080c13bb}
+#stemDialog select{width:auto;max-width:100%}
+#stemDialog p{font-size:14px;color:var(--muted)}
+#stemDialog progress{width:100%;accent-color:#84d9b7}
+#startStems:enabled{background:#84d9b7;color:#142e28;font-weight:650}
+#stemJob{position:sticky;bottom:8px;z-index:4;margin-top:12px;padding:12px 16px;border:1px solid #566674;background:var(--panel);border-radius:12px;box-shadow:0 2px 18px #0007}
+#stemJob:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+#stemJob progress{accent-color:#84d9b7;flex:1;min-width:80px}
