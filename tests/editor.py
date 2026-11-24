@@ -1,0 +1,111 @@
+"""Browser acceptance checks. Start site/ on port 8213 before running."""
+import array
+import math
+import tempfile
+import wave
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+def tone(path, hz):
+    with wave.open(str(path), 'wb') as output:
+        output.setparams((1, 2, 22050, 0, 'NONE', ''))
+        data = array.array('h', (int(12000*math.sin(2*math.pi*hz*i/22050)) for i in range(220500)))
+        output.writeframes(data.tobytes())
+
+with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright:
+    root = Path(directory)
+    for hz in [440, 660]:
+        tone(root/f'{hz}.wav', hz)
+    browser = playwright.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+    page = browser.new_page(viewport={'width': 920, 'height': 720}, has_touch=True)
+    page.set_default_timeout(5000)
+    errors = []
+    page.on('pageerror', lambda e: errors.append(str(e)))
+    page.goto('http://localhost:8213')
+    def field(id, value):
+        item = page.locator('#'+id)
+        item.fill(str(value))
+        item.press('Tab')
+    def export():
+        with page.expect_download() as download:
+            page.locator('#save').click()
+        with wave.open(str(download.value.path())) as audio:
+            rate=audio.getframerate()
+            signal=array.array('h', audio.readframes(audio.getnframes()))[::2]
+        return rate,signal
+    page.locator('#files').set_input_files(root/'440.wav')
+    for percent in (125,75):
+        field('speed',percent)
+        rate,signal=export()
+        assert abs(len(signal)/rate-1000/percent)<.001
+        middle=signal[rate:rate*2]
+        hz=sum(a<0<=b for a,b in zip(middle,middle[1:]))
+        assert abs(hz-440)<=2,(percent,hz)
+    page.locator('#undo').click()
+    assert page.locator('#speed').input_value()=='125'
+    field('speed',100)
+    def gesture(locator, dx,dy=0):
+        locator.scroll_into_view_if_needed()
+        box=locator.bounding_box()
+        x=box['x']+box['width']/2
+        y=box['y']+box['height']*.65
+        page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+dx,y+dy,steps=8);page.mouse.up()
+    edge=page.locator('[data-edge=right]').first
+    gesture(edge,-70)
+    assert float(page.locator('#end').input_value())<10
+    gesture(edge,150)
+    assert float(page.locator('#end').input_value())==10
+    page.locator('#undo').click()
+    assert float(page.locator('#end').input_value())<10
+    page.locator('#redo').click()
+    page.locator('#files').set_input_files(root/'660.wav')
+    page.wait_for_selector('[data-track="2"] canvas')
+    field('offset',5)
+    rate,signal=export()
+    assert abs(len(signal)/rate-15)<.001
+    gesture(page.locator('[data-track="2"] canvas'),0,-90)
+    assert page.locator('[data-track="1"] canvas').count()==2
+    field('crossLength',3)
+    page.locator('#curve').select_option('linear')
+    page.locator('#undo').click()
+    assert page.locator('#curve').input_value()=='equal'
+    page.locator('#redo').click()
+    rate,cross=export()
+    assert len(cross)==len(signal) and cross!=signal
+    page.locator('#auto').uncheck()
+    rate,plain=export()
+    assert plain==signal
+    page.locator('#undo').click()
+    assert page.locator('#auto').is_checked()
+    page.locator('#mode').select_option('stretch')
+    gesture(page.locator('[data-track="1"] [data-edge=right]').last,-30)
+    assert float(page.locator('#speed').input_value())>100
+    ruler=page.locator('#ruler')
+    gesture(ruler,60)
+    assert page.locator('#loop').is_checked()
+    page.locator('#play').click()
+    page.wait_for_function("!document.getElementById('pauseMix').disabled")
+    page.locator('#pauseMix').click()
+    assert page.locator('#pauseMix').inner_text()=='Wznów'
+    page.locator('#stop').click()
+    page.locator('#split').click()
+    assert page.locator('#lanes canvas').count()==3
+    with page.expect_download() as download:
+        page.locator('#mp3').click()
+    assert download.value.suggested_filename.endswith('.mp3')
+    page.set_viewport_size({'width':740,'height':360})
+    page.locator('#lanes button').first.tap()
+    assert page.locator('#properties').inner_text()=='440.wav'
+    page.locator('#mode').select_option('trim')
+    handle=page.locator('[data-edge=right]').first
+    handle.scroll_into_view_if_needed()
+    box=handle.bounding_box()
+    x=box['x']+box['width']/2
+    y=box['y']+box['height']*.7
+    touch=page.context.new_cdp_session(page)
+    before=float(page.locator('#end').input_value())
+    for event,points in [('touchStart',[{'x':x,'y':y}]),('touchMove',[{'x':x-25,'y':y}]),('touchEnd',[])]:
+        touch.send('Input.dispatchTouchEvent',{'type':event,'touchPoints':points})
+    assert float(page.locator('#end').input_value())<before
+    assert not errors,errors
+    print('Acceptance checks passed')

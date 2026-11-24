@@ -1,0 +1,28 @@
+# MixLab
+
+Lokalny edytor nagrań działający w przeglądarce. Uruchom w katalogu projektu:
+
+```sh
+python3 -m http.server 8213 --directory site
+```
+
+Otwórz port 8213 w przeglądarce. Do publikacji wystarcza zawartość katalogu `site/`. Workflow w `.github/workflows/pages.yml` publikuje ten katalog po wysłaniu zmian na `main`. Pliki audio pozostają w pamięci karty. Odświeżenie strony usuwa sesję.
+
+## Montaż
+
+- Dodaj nagrania. Każdy import tworzy osobną ścieżkę. W trybie **Przesuwanie** przeciągnij klip na inną ścieżkę lub do pola „Nowa ścieżka”. Przyciąganie wyrównuje brzegi do innych klipów w odległości ośmiu pikseli.
+- W trybie **Przycinanie** przeciągnij lewą lub prawą stronę klipu. Możesz odzyskać materiał, rozciągając krawędź. W trybie **Zmiana tempa** podobny gest zmienia czas trwania. Właściwości pozwalają wpisać tempo od 25% do 400% lub wybrać podpowiedź w polu procentowym.
+- Złote narożniki sterują narastaniem i wygaszaniem. Dotknięcie włącza sekundę efektu (lub długość krótszego klipu), ponowne dotknięcie go wyłącza. Przeciągnij narożnik lub wpisz liczbę sekund, aby ustawić długość.
+- Na tej samej ścieżce nałożenie klipów włącza przejście. Fioletowy obszar i obwiednia na fali pokazują jego długość i poziom sygnału. Właściwości **wchodzącego klipu** określają typ i czas przejścia. Puste pole obejmuje całe nałożenie. Krótszy czas kończy przejście wcześniej. Osobne ścieżki sumują dźwięk.
+- Kliknij lub dotknij podziałki, aby ustawić początek odtwarzania albo miejsce podziału wybranego klipu. Przeciągnięcie po podziałce ustawia zakres i włącza pętlę. Odtwórz miks, aby go zapętlić. Eksport zawsze obejmuje cały miks.
+- Cofnij i ponów obsługują ostatnie 30 edycji. WAV i MP3 uwzględniają tempo, głośność i wszystkie przejścia.
+
+## Przetwarzanie i ograniczenia
+
+`site/app.js` przechowuje operacje edycyjne i rysuje oś czasu. Klipy odwołują się do źródłowych buforów Web Audio. Moduł `site/audio.js` przygotowuje zmianę tempa i wspólny graf odsłuchu oraz eksportu. Zachowanie tonacji używa SoundTouchJS 0.2.1. Przy dużej zmianie tempa możliwe są artefakty. Zapas poziomu jest obliczany na podstawie sumy głośności jednoczesnych klipów i stosowany w całym miksie.
+
+Pierwszy odsłuch po zmianie tempa wymaga przygotowania próbek. Pętla renderuje zaznaczony zakres do bufora. Limit długości projektu zależy od pamięci urządzenia. MP3 koduje osobny worker z lamejs 1.2.1. Obie biblioteki są dostarczane lokalnie z licencjami w `site/vendor/`.
+
+## Testy
+
+Przy działającym serwerze na porcie 8213 uruchom `python3 tests/editor.py` w środowisku z pakietem Python Playwright i Chromium w `/usr/bin/chromium`. Test generuje dwa sygnały, mierzy długość i częstotliwość po zmianie tempa, porównuje eksport miksu i przejścia oraz ćwiczy gesty, historię, pętlę i eksport MP3.
