@@ -44,9 +44,17 @@ Maksymalny błąd sumy wokalu i podkładu wyniósł 2,98 × 10⁻⁸ w skali PCM
 
 Próba dłuższego zakresu (pięć powtórzeń pierwszej próbki, 34,02 s, siedem segmentów) zajęła **268,5 s** na WASM. Maksymalny sumaryczny RSS wyniósł **2100 MiB** przy 562 MiB przed próbą. Maksymalny błąd rekonstrukcji pozostał na poziomie 2,98 × 10⁻⁸. Ten przebieg można odtworzyć opcją `--repeat-first 5`.
 
-W GitHub Actions testy inferencji i edycji przeszły na Windowsie w Chromium oraz na Linuksie w Firefoksie. [Windows](https://github.com/lduk/mixlab/actions/runs/45510560558/job/138856900708) · [Firefox](https://github.com/lduk/mixlab/actions/runs/45510560558/job/138856900700)
+Testy inferencji i edycji przeszły również w GitHub Actions.
 
-Test edytora z rzeczywistą inferencją w Chromium objął anulowanie podczas separacji, edycję zaznaczenia, zgodność początków i tempa stemów, filtry, Solo, eksport WAV/MP3, cofnięcie oraz ponowne wykorzystanie cache po przeładowaniu. Test jakości porównuje sygnały numerycznie. Ocena odsłuchowa na szerszym repertuarze i pomiary na fizycznych telefonach pozostają otwarte. Ze względu na koszt czasowy i pamięć moduł udostępnia obecnie tryb dwóch ścieżek. [Testy przeglądarek](https://github.com/lduk/mixlab/actions/workflows/stem-browsers.yml)
+| Środowisko | Sprawdzone działanie |
+|---|---|
+| Windows, Chromium | Separacja, przerwanie pracy, grupa, Solo, filtr, zgodność poziomu i długości zrekonstruowanego miksu, pobranie WAV i MP3 oraz odczyt z cache. |
+| Linux, Firefox | Ten sam scenariusz od importu do eksportu i przywrócenia wyniku po przeładowaniu. |
+| Android 15, Chrome, emulator x86-64 z 4 GB RAM | Import, zaznaczenie, anulowanie, ukończenie rzeczywistej separacji, zmiana tempa i położenia grupy, Solo, filtr, cofanie i cache. Pobieranie plików przez system Android pozostaje do weryfikacji na telefonie. |
+
+[Przebieg testów na trzech platformach](https://github.com/lduk/mixlab/actions/runs/45511741722) · [Chrome na Androidzie](https://github.com/lduk/mixlab/actions/runs/45511741722/job/138860904382)
+
+Test edytora z rzeczywistą inferencją w Chromium objął anulowanie podczas separacji, edycję zaznaczenia, zgodność początków i tempa stemów, filtry, Solo, eksport WAV/MP3, cofnięcie oraz ponowne wykorzystanie cache po przeładowaniu. Test jakości porównuje sygnały numerycznie. Ocena odsłuchowa na szerszym repertuarze, pomiary na fizycznych telefonach i wydajność sprzętowego WebGPU pozostają otwarte. Ze względu na koszt czasowy i pamięć moduł udostępnia obecnie tryb dwóch ścieżek. [Testy przeglądarek](https://github.com/lduk/mixlab/actions/workflows/stem-browsers.yml)
 
 ## Odtworzenie testów
 
