@@ -42,6 +42,10 @@ W dodatkowym przebiegu SDR obliczony wyłącznie na obszarze przenikania okien (
 
 Maksymalny błąd sumy wokalu i podkładu wyniósł 2,98 × 10⁻⁸ w skali PCM. Czasy obejmują inicjalizację, dwa wywołania modelu i zapis cache. Pierwsza próbka pobierała model z lokalnego serwera HTTP. RSS to suma procesów przeglądarki próbkowana co 100 ms, więc pamięć współdzielona może być liczona kilkukrotnie. Pomiar produkcyjny obejmie również czas pierwszego pobrania przez internet. Wyniki opisują te trzy nagrania. Pogłos, chórki i barwy podobne do wokalu mogą przenikać między ścieżkami.
 
+Próba dłuższego zakresu (pięć powtórzeń pierwszej próbki, 34,02 s, siedem segmentów) zajęła **268,5 s** na WASM. Maksymalny sumaryczny RSS wyniósł **2100 MiB** przy 562 MiB przed próbą. Maksymalny błąd rekonstrukcji pozostał na poziomie 2,98 × 10⁻⁸. Ten przebieg można odtworzyć opcją `--repeat-first 5`.
+
+W GitHub Actions testy inferencji i edycji przeszły na Windowsie w Chromium oraz na Linuksie w Firefoksie. [Windows](https://github.com/lduk/mixlab/actions/runs/45510560558/job/138856900708) · [Firefox](https://github.com/lduk/mixlab/actions/runs/45510560558/job/138856900700)
+
 Test edytora z rzeczywistą inferencją w Chromium objął anulowanie podczas separacji, edycję zaznaczenia, zgodność początków i tempa stemów, filtry, Solo, eksport WAV/MP3, cofnięcie oraz ponowne wykorzystanie cache po przeładowaniu. Test jakości porównuje sygnały numerycznie. Ocena odsłuchowa na szerszym repertuarze i pomiary na fizycznych telefonach pozostają otwarte. Ze względu na koszt czasowy i pamięć moduł udostępnia obecnie tryb dwóch ścieżek. [Testy przeglądarek](https://github.com/lduk/mixlab/actions/workflows/stem-browsers.yml)
 
 ## Odtworzenie testów

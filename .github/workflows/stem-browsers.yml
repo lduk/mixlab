@@ -36,7 +36,7 @@ jobs:
           python tests/stem_editor.py --serve --url http://127.0.0.1:8213/ --browser ${{ matrix.browser }} 2>&1 | tee test.log || { echo "::error::$(tail -c 650 test.log | tr '\n' ' ')"; exit 1; }
           tail -3 test.log >> "$GITHUB_STEP_SUMMARY"
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
@@ -49,8 +49,16 @@ jobs:
           trap 'echo "::error::Android setup failed at line $LINENO ($BASH_COMMAND)"' ERR
           sudo chmod a+rw /dev/kvm
           image='system-images;android-35;google_apis_playstore;x86_64'
-          sdkmanager "platform-tools" "emulator" "$image"
-          "$ANDROID_HOME/emulator/emulator" -version
+          sudo apt-get update -qq
+          sudo apt-get install -y libpulse0 libgl1 libnss3 libxcb-cursor0 libxkbcommon-x11-0 libxkbfile1
+          set +o pipefail
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses > /dev/null
+          set -o pipefail
+          sdkmanager --sdk_root="$ANDROID_HOME" --install "platform-tools" "emulator" "$image" > "$RUNNER_TEMP/android-sdk.log" 2>&1
+          if ! "$ANDROID_HOME/emulator/emulator" -version > "$RUNNER_TEMP/version.log" 2>&1; then
+            echo "::error::Android emulator installation: $(tail -c 700 "$RUNNER_TEMP/android-sdk.log" | tr '\r\n' ' ') $(tail -c 700 "$RUNNER_TEMP/version.log" | tr '\n' ' ')"
+            exit 1
+          fi
           echo no | avdmanager create avd --force -n mixlab -k "$image" --device pixel_5
           config="$HOME/.android/avd/mixlab.avd/config.ini"
           sed -i '/^disk.dataPartition.size=/d' "$config"
