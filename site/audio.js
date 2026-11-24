@@ -72,7 +72,8 @@ export function fadeScale(c) {
 export function envelope(c,t) {
   const length=duration(c)
   const scale=fadeScale(c)
-  let level=Math.min(1,c.fadeIn ? t/(c.fadeIn*scale) : 1,c.fadeOut ? (length-t)/(c.fadeOut*scale) : 1)
+  const attack=c.fadeIn ? Math.min(1,t/(c.fadeIn*scale)) : 1
+  let level=Math.min(transitionGain(attack,true,c.attackCurve!=='equal'),c.fadeOut ? (length-t)/(c.fadeOut*scale) : 1)
   for (const tr of c.transitions ?? []) {
     if(t<tr.start || t>tr.start+tr.overlap) continue
     const phase=Math.min(1,(t-tr.start)/tr.length)
@@ -106,6 +107,9 @@ export function schedule(ctx,items,start,from,to) {
     const onset=start+first-from, local=first-c.at
     const points=new Set([local,last-c.at])
     const scale=fadeScale(c)
+    if(c.fadeIn && c.attackCurve==='equal'){
+      for(let i=1;i<32;i++)points.add(c.fadeIn*scale*i/32)
+    }
     points.add(c.fadeIn*scale)
     points.add(duration(c)-c.fadeOut*scale)
     for(const tr of c.transitions){

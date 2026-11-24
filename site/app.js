@@ -1,3 +1,4 @@
+import {estimateBpm} from './bpm.js'
 import {duration, transitions, transitionGain, fadeScale, envelope, prepare, schedule} from './audio.js'
 const $ = id => document.getElementById(id)
 let clips = [], history = [], active = 0, context, sources = []
@@ -69,6 +70,7 @@ const hints = {
   move: 'Przeciągnij klip wzdłuż osi lub na inną ścieżkę.',
   trim: 'Przeciągnij lewą lub prawą krawędź klipu, aby go przyciąć.',
   stretch: 'Przeciągnij krawędź klipu, aby zmienić tempo.',
+  attack: 'Kliknij na fali moment, w którym wejście ma osiągnąć pełną głośność. Przesuń miętowy punkt, aby go dopasować.',
   fade: 'Kliknij na fali początek wyciszenia. Przesuń złoty punkt, aby go dopasować.'
 }
 function selectMode(value) {
@@ -99,22 +101,24 @@ document.addEventListener('keydown', event => {
   }
 })
 
-function editFadeStart(event, bar, clip, index, marker) {
+function editFadePoint(event, bar, clip, index, key, marker) {
   const width = bar.getBoundingClientRect().width
   const left = bar.getBoundingClientRect().left
   const length = duration(clip)
   const scale = fadeScale(clip)
-  const start = length - clip.fadeOut * scale
+  const inward = key === 'fadeIn'
+  const start = inward ? clip.fadeIn * scale : length - clip.fadeOut * scale
+  const description = inward ? 'Koniec narastania ' : 'Początek wyciszenia '
   const draft = {...clip}
   let point = start
   bar.setPointerCapture(event.pointerId)
   function preview(x) {
     const time = marker ? start + (x-event.clientX)*length/width : (x-left)*length/width
     point = Math.max(0,Math.min(length,Math.round(time*1000)/1000))
-    draft.fadeOut = length-point
-    draft.fadeIn = Math.min(clip.fadeIn*scale,point)
+    draft.fadeIn = inward ? point : Math.min(clip.fadeIn*scale,point)
+    draft.fadeOut = inward ? Math.min(clip.fadeOut*scale,length-point) : length-point
     paintClip(bar,draft)
-    $('range').textContent = 'Początek wyciszenia '+format(clip.at+point)+' · długość '+format(draft.fadeOut)
+    $('range').textContent = description+format(clip.at+point)+' · długość '+format(draft[key])
   }
   function finish() {
     bar.onpointermove = bar.onpointerup = bar.onpointercancel = null
@@ -133,7 +137,7 @@ function editFadeStart(event, bar, clip, index, marker) {
     }
     active = index
     finish()
-    $('range').textContent = 'Początek wyciszenia '+format(clip.at+point)+' · długość '+format(draft.fadeOut)
+    $('range').textContent = description+format(clip.at+point)+' · długość '+format(draft[key])
   }
 }
 function paintClip(bar,c){
@@ -143,13 +147,17 @@ function paintClip(bar,c){
   const data=c.buffer.getChannelData(0), rate=c.buffer.sampleRate
   g.clearRect(0,0,canvas.width,canvas.height)
   const length=duration(c)
-  const boundary=1-c.fadeOut*fadeScale(c)/length
-  const marker=bar.querySelector('.fade-start')
-  marker.hidden=c.fadeOut<=0
-  marker.style.left=(100*boundary)+'%'
-  marker.title='Początek wyciszenia '+format(c.at+length*boundary)
-  g.fillStyle='#ffcd6a22'
-  g.fillRect(boundary*canvas.width,0,(1-boundary)*canvas.width,44)
+  const scale=fadeScale(c)
+  for(const marker of bar.querySelectorAll('[data-fade]')){
+    const inward=marker.dataset.fade==='fadeIn'
+    const fraction=c[marker.dataset.fade]*scale/length
+    const boundary=inward ? fraction : 1-fraction
+    marker.hidden=fraction<=0
+    marker.style.left=(100*boundary)+'%'
+    marker.title=(inward ? 'Koniec narastania ' : 'Początek wyciszenia ')+format(c.at+length*boundary)
+    g.fillStyle=inward ? '#81dfc433' : '#ffcd6a22'
+    g.fillRect(inward ? 0 : boundary*canvas.width,0,fraction*canvas.width,44)
+  }
   g.fillStyle='#d5e9f2'
   const samples=(c.end-c.begin)*rate/canvas.width
   for(let x=0;x<canvas.width;x++){
@@ -216,6 +224,7 @@ function renderTimeline(items){
     const bar=document.createElement('button')
     const label=document.createElement('span'),canvas=document.createElement('canvas')
     label.textContent=clip.name+' · '+Number((clip.speed*100).toFixed(1))+'%'
+    if(clip.sourceBpm) label.textContent+=' · '+mixBpm(clip)+' BPM'
     bar.dataset.color=index%4
     canvas.width=800
     canvas.height=44
@@ -226,9 +235,12 @@ function renderTimeline(items){
       handle.title=({left:'Lewa krawędź',right:'Prawa krawędź',fadeIn:'Narastanie',fadeOut:'Wygaszanie'})[edge]
       bar.append(handle)
     }
-    const marker=document.createElement('i')
-    marker.className='fade-start'
-    bar.append(marker)
+    for(const key of ['fadeIn','fadeOut']){
+      const marker=document.createElement('i')
+      marker.className=key==='fadeIn' ? 'fade-end' : 'fade-start'
+      marker.dataset.fade=key
+      bar.append(marker)
+    }
     bar.setAttribute('aria-pressed',index===active)
     lane.append(bar)
     bar.style.top=(23+row*66)+'px'
@@ -238,9 +250,10 @@ function renderTimeline(items){
     bar.onpointerdown=e=>{
       if(e.button!==0 || !e.isPrimary)return
       const edge=e.target.dataset.edge, origin=e.clientX
-      const marker=e.target.classList.contains('fade-start')
-      if(mode==='fade' || marker) {
-        editFadeStart(e,bar,clip,index,marker)
+      const marker=e.target.dataset.fade
+      const fadeKey=mode==='attack' ? 'fadeIn' : mode==='fade' ? 'fadeOut' : marker
+      if(fadeKey) {
+        editFadePoint(e,bar,clip,index,fadeKey,marker===fadeKey)
         return
       }
       const scale=span/timeline.getBoundingClientRect().width
@@ -305,6 +318,7 @@ function renderTimeline(items){
 }
 $('zoom').onchange=render
 function render(){
+  $('bpmStatus').textContent=''
   selection=null
   drag=null
   $('trim').disabled=true
@@ -341,6 +355,10 @@ function render(){
   else {
     for(const key of ['begin','end','speed','volume','fadeIn','fadeOut']) $(key).value=current()[key]
     $('speed').value=Number((current().speed*100).toFixed(3))
+    $('sourceBpm').value=current().sourceBpm ?? ''
+    $('targetBpm').disabled=!current().sourceBpm
+    $('targetBpm').value=current().sourceBpm ? mixBpm(current()) : ''
+    $('attackCurve').value=current().attackCurve ?? 'linear'
     $('preserve').checked=current().preserve
     $('curve').value=current().curve
     $('crossLength').value=current().crossLength ?? ''
@@ -378,6 +396,40 @@ for(const key of ['begin','end','speed','volume','fadeIn','fadeOut']) $(key).onc
     remember();clips[active]=c;$('message').textContent=''
   }else $('message').textContent='Sprawdź zakres wartości.'
   render()
+}
+function mixBpm(clip){
+  return Number((clip.sourceBpm*clip.speed).toFixed(3))
+}
+function setSourceBpm(value){
+  remember()
+  current().sourceBpm=value
+  render()
+}
+$('estimateBpm').onclick=()=>{
+  const value=estimateBpm(current().buffer)
+  if(value) setSourceBpm(value)
+  $('bpmStatus').textContent=value ? 'Szacowane tempo: '+value+' BPM.' : 'Brak wyraźnego pulsu. Wpisz BPM źródłowe ręcznie.'
+}
+$('sourceBpm').onchange=()=>{
+  const field=$('sourceBpm')
+  if(!field.validity.badInput && (field.value==='' || field.valueAsNumber>0)){
+    setSourceBpm(field.value==='' ? null : field.valueAsNumber)
+  }else{
+    render()
+    $('bpmStatus').textContent='Podaj dodatnie BPM źródłowe.'
+  }
+}
+$('targetBpm').onchange=()=>{
+  const original=current().sourceBpm
+  const speed=$('targetBpm').valueAsNumber/original
+  if(speed>=0.25 && speed<=4){
+    remember()
+    current().speed=speed
+    render()
+  }else{
+    render()
+    $('bpmStatus').textContent='BPM docelowe musi mieścić się w zakresie od '+original/4+' do '+original*4+'.'
+  }
 }
 $('offset').onchange=()=>{
   const field=$('offset')
@@ -433,11 +485,11 @@ $('auto').onchange=()=>{
   $('auto').checked=!$('auto').checked
   render()
 }
-for(const key of ['preserve','curve','crossLength']) $(key).onchange=()=>{
+for(const key of ['preserve','curve','attackCurve','crossLength']) $(key).onchange=()=>{
   const field=$(key)
   if(!field.validity.valid){render();return}
   remember()
-  current()[key]=key==='preserve' ? field.checked : key==='curve' ? field.value : field.value==='' ? null : field.valueAsNumber
+  current()[key]=key==='preserve' ? field.checked : key!=='crossLength' ? field.value : field.value==='' ? null : field.valueAsNumber
   render()
 }
 function paintLoop(){

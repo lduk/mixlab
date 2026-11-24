@@ -15,6 +15,7 @@
     <button data-mode="move" aria-pressed="true">Przesuń</button>
     <button data-mode="trim" aria-pressed="false">Przytnij</button>
     <button data-mode="stretch" aria-pressed="false">Tempo</button>
+    <button data-mode="attack" aria-pressed="false">Narastanie</button>
     <button data-mode="fade" aria-pressed="false">Wycisz</button>
   </div>
   <div class="history"><button id="undo" title="Cofnij" aria-label="Cofnij">↶</button><button id="redo" title="Ponów" aria-label="Ponów">↷</button></div>
@@ -45,7 +46,11 @@
 <label>Od (s)<input id="begin" type="number" step="any" min="0"></label><label>Do (s)<input id="end" type="number" step="any" min="0"></label>
 <label>Start w miksie (s)<input id="offset" type="number" min="0" step="any" placeholder="Po poprzednim"></label><label>Tempo (%)<input type="number" min="25" max="400" step="any" id="speed" list="presets"></label>
 <datalist id="presets"><option value="50"><option value="75"><option value="90"><option value="100"><option value="110"><option value="125"><option value="150"><option value="200"></datalist><label><input type="checkbox" id="preserve"> Zachowaj tonację</label>
+<label>BPM źródłowe<input id="sourceBpm" type="number" step="any" placeholder="Wpisz BPM"></label>
+<button id="estimateBpm">Oszacuj BPM</button>
+<label>BPM docelowe<input id="targetBpm" type="number" step="any" disabled></label>
+<output id="bpmStatus"></output>
 <label>Przejście<select id="curve"><option value="equal">Equal Power</option><option value="linear">Linear</option></select></label><label>Przejście (s)<input type="number" min="0" step="any" placeholder="Automatycznie" id="crossLength"></label>
-<label>Głośność (%)<input id="volume" type="number" min="0" max="100"></label><label>Narastanie (s)<input id="fadeIn" type="number" min="0" step="any"></label><label>Wygaszanie (s)<input id="fadeOut" type="number" min="0" step="any"></label></div><button id="preview">▶ Odsłuch klipu</button> <button id="pauseClip" aria-label="Pauza lub wznowienie klipu" disabled>Pauza</button></section>
+<label>Głośność (%)<input id="volume" type="number" min="0" max="100"></label><label>Narastanie (s)<input id="fadeIn" type="number" min="0" step="any"></label><label>Krzywa wejścia<select id="attackCurve"><option value="linear">Liniowa</option><option value="equal">Equal Power</option></select></label><label>Wygaszanie (s)<input id="fadeOut" type="number" min="0" step="any"></label></div><button id="preview">▶ Odsłuch klipu</button> <button id="pauseClip" aria-label="Pauza lub wznowienie klipu" disabled>Pauza</button></section>
 
 </main><script src="app.js" type="module"></script></html>

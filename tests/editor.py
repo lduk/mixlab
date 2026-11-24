@@ -51,6 +51,25 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
         x=box['x']+box['width']/2
         y=box['y']+box['height']*.65
         page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+dx,y+dy,steps=8);page.mouse.up()
+    field('sourceBpm',100)
+    field('targetBpm',125)
+    assert page.locator('#speed').input_value()=='125'
+    rate,signal=export()
+    assert abs(len(signal)/rate-8)<.001
+    page.locator('#undo').click()
+    assert page.locator('#targetBpm').input_value()=='100'
+    bar=page.locator('#lanes button').first
+    page.locator('button[data-mode=attack]').click()
+    bar.click(position={'x':round(bar.bounding_box()['width']*.4),'y':38})
+    assert abs(float(page.locator('#fadeIn').input_value())-4)<.05
+    for curve,expected in [('linear',.5),('equal',2**-.5)]:
+        page.locator('#attackCurve').select_option(curve)
+        rate,signal=export()
+        assert abs(max(signal[2*rate:2*rate+rate//50])/max(signal)-expected)<.03
+    page.locator('button[data-mode=move]').click()
+    gesture(bar.locator('.fade-end'),-bar.bounding_box()['width']*.2)
+    assert abs(float(page.locator('#fadeIn').input_value())-2)<.05
+    field('fadeIn',0)
     # Place a fade at six seconds on a ten-second clip and adjust its visible marker.
     page.locator('button[data-mode=fade]').click()
     bar=page.locator('#lanes button').first
@@ -81,6 +100,8 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     page.locator('#redo').click()
     page.locator('#files').set_input_files(root/'660.wav')
     page.wait_for_selector('[data-track="2"] canvas')
+    assert page.locator('#sourceBpm').input_value()==''
+    assert page.locator('#targetBpm').is_disabled()
     field('offset',5)
     rate,signal=export()
     assert abs(len(signal)/rate-15)<.001
@@ -140,5 +161,14 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
                             'buffer':Path(download.value.path()).read_bytes()})
     phone.wait_for_selector('#lanes canvas')
     assert phone.locator('#properties').inner_text()=='nagranie.mp3'
+    # Distinct pulses at a half-second interval give a known 120 BPM source.
+    with wave.open(str(root/'beat.wav'),'wb') as out:
+        out.setparams((1,2,22050,0,'NONE',''))
+        samples=array.array('h',(int(15000*math.sin(i*.1)) if i%11025<650 else 0 for i in range(220500)))
+        out.writeframes(samples.tobytes())
+    phone.locator('#files').set_input_files(root/'beat.wav')
+    phone.wait_for_function("document.getElementById('properties').textContent==='beat.wav'")
+    phone.locator('#estimateBpm').tap()
+    assert phone.locator('#sourceBpm').input_value()=='120'
     assert not errors,errors
     print('Acceptance checks passed')
