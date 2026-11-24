@@ -36,7 +36,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
         return rate,signal
     # Start with an empty mix. Auditioning must not add a clip or an undo entry.
     page.locator('#openEffects').click()
-    library=page.locator('#effectsDialog')
+    library=page.locator('#effectsPanel')
     for name in ['Wybuch','Syrena','Krzyk','Świst','Oklaski','Pukanie','Dzwonek','Laser']:
         preview=library.get_by_role('button', name='Odsłuch: '+name, exact=True)
         preview.click()
@@ -239,6 +239,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     # Files providers may report MP3s as generic documents. Open the picker
     # through the touch control and import the MP3 exported by this session.
     phone=browser.new_page(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
+    phone.add_init_script('if (window.HTMLDialogElement) HTMLDialogElement.prototype.showModal = undefined')
     phone.goto('http://localhost:8213')
     assert phone.locator('#files').get_attribute('accept') is None
     with phone.expect_file_chooser() as picker:

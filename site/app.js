@@ -452,7 +452,7 @@ function addClip(buffer,name,sourceBpm,offset) {
   render()
 }
 
-const effectsDialog=$('effectsDialog')
+const effectsLibrary=$('effectsLibrary')
 let audition=null, effectPosition=0
 function stopAudition(){
   if(!audition)return
@@ -464,20 +464,30 @@ function stopAudition(){
   button.textContent='▶'
   button.setAttribute('aria-pressed','false')
 }
-$('openEffects').onclick=()=>{
+function syncEffectsPanel(){
+  if(!effectsLibrary.open){stopAudition();return}
   effectPosition=displayedTime
   cursor=effectPosition
   stop()
   $('effectTime').textContent=format(effectPosition)
   $('effectStatus').textContent=''
-  effectsDialog.showModal()
 }
 function closeEffects(){
   stopAudition()
-  effectsDialog.close()
+  effectsLibrary.open=false
+  $('openEffects').focus({preventScroll:true})
 }
 $('closeEffects').onclick=closeEffects
-effectsDialog.oncancel=stopAudition
+effectsLibrary.ontoggle=syncEffectsPanel
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape' && effectsLibrary.open)closeEffects()
+})
+document.addEventListener('pointerdown',event=>{
+  if(effectsLibrary.open && !effectsLibrary.contains(event.target)){
+    stopAudition()
+    effectsLibrary.open=false
+  }
+})
 for(const effect of effects){
   const row=document.createElement('div')
   const name=document.createElement('span')
@@ -526,6 +536,8 @@ for(const effect of effects){
   row.append(preview,name,add)
   $('effectList').append(row)
 }
+$('effectStatus').textContent=''
+if(effectsLibrary.open)syncEffectsPanel()
 $('files').onchange=async e=>{
   const input=e.target, files=[...input.files], errors=[]
   input.disabled=true
