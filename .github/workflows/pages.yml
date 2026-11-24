@@ -35,3 +35,9 @@ jobs:
     steps:
       - id: deploy
         uses: actions/deploy-pages@v5
+      - name: Verify published separation weights
+        env:
+          PAGE_URL: ${{ steps.deploy.outputs.page_url }}
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors "${PAGE_URL%/}/ai-assets/UVR_MDXNET_Main.onnx" -o "$RUNNER_TEMP/published.onnx"
+          echo "8289784cda38543ff431add4070662813311a8cccfc0112ca82f76d9dba2b4ca  $RUNNER_TEMP/published.onnx" | sha256sum -c

@@ -101,7 +101,7 @@ export function mixPeak(items) {
     const paired=c.stemRole==='vocals' || c.stemRole==='accompaniment'
     const key=paired ? [c.group,c.speed,c.at-c.begin/c.speed,c.preserve].join('/') : null
     for(const [t,sign] of [[c.at,1],[c.at+duration(c),-1]]){
-      edges.push({t,delta:sign*c.volume/100,key,role:c.stemRole})
+      edges.push({t:Math.round(t*1e6),delta:sign*c.volume/100,key,role:c.stemRole})
     }
   }
   let sum=0,peak=1

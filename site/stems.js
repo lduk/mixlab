@@ -25,7 +25,7 @@ export function deviceLimit(seconds) {
 export async function separateClip(buffer, begin, end, signal, progress) {
   const reason = deviceLimit(end-begin)
   if (reason) throw Error(reason)
-  const length = Math.max(1, Math.round((end-begin)*rate))
+  const length = Math.max(1, Math.ceil((end-begin)*rate))
   progress({stage:'Przygotowanie dźwięku 44,1 kHz'})
   const offline = new OfflineAudioContext(2,length,rate)
   const source = offline.createBufferSource()

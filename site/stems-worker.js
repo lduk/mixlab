@@ -111,7 +111,7 @@ async function separate({channels,forceWasm}) {
     ort.env.wasm.wasmPaths=assets.href
     ort.env.wasm.numThreads=1
     const gpu=!forceWasm && await navigator.gpu?.requestAdapter().catch(()=>null)
-    for(const provider of gpu ? ['webgpu','wasm'] : ['wasm']){
+    for(const provider of gpu && !gpu.info?.isFallbackAdapter ? ['webgpu','wasm'] : ['wasm']){
       let session
       backend=provider==='wasm' ? 'WASM' : 'WebGPU'
       try {

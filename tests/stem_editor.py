@@ -1,5 +1,6 @@
 """Real inference + editing checks. Usage: python tests/stem_editor.py --help"""
 import argparse
+import array
 import io
 import math
 import struct
@@ -51,7 +52,14 @@ with sync_playwright() as pw:
         expect(page.locator('#stemScope')).to_have_value('selection')
         expect(page.locator('#startStems')).to_be_enabled()
         page.locator('#startStems').click()
+    def export_mix():
+        page.locator('#exportMenu').click()
+        with page.expect_download() as download:
+            page.locator('#save').click()
+        with wave.open(str(download.value.path())) as wav:
+            return array.array('h',wav.readframes(wav.getnframes()))
     import_audio()
+    dry=export_mix() if not args.cdp else None
     assert not any('/ai-assets/' in url for _,url in requests)
     start()
     expect(page.locator('#jobStage')).to_contain_text('Separacja ·',timeout=240000)
@@ -69,6 +77,12 @@ with sync_playwright() as pw:
         page.locator('.wave-clip').filter(has_text=name).focus()
         page.keyboard.press('Enter')
     def number(id):return float(page.locator('#'+id).input_value())
+    if dry is not None:
+        combined=export_mix()
+        assert abs(len(dry)-len(combined))<=2
+        energy=sum(x*x for x in dry)
+        error=sum((x-y)**2 for x,y in zip(dry,combined))
+        assert error/energy<.002, 'Reconstructed project changed level or timing'
     start_at=number('offset')
     assert .70<start_at<.80
     page.locator('#groupStart').fill('2')

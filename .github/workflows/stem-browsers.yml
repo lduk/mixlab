@@ -32,7 +32,8 @@ jobs:
       - name: Separate and edit audio in the browser
         run: |
           python -m http.server 8213 --directory site &
-          python tests/stem_editor.py --browser ${{ matrix.browser }}
+          python tests/stem_editor.py --browser ${{ matrix.browser }} 2>&1 | tee test.log || { echo "::error::$(tail -c 650 test.log | tr '\n' ' ')"; exit 1; }
+          tail -3 test.log >> "$GITHUB_STEP_SUMMARY"
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -43,11 +44,12 @@ jobs:
       - name: Start Android with Chrome
         shell: bash
         run: |
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          trap 'echo "::error::Android setup failed at line $LINENO ($BASH_COMMAND)"' ERR
           sudo chmod a+rw /dev/kvm
           image='system-images;android-35;google_apis_playstore;x86_64'
           sdkmanager "$image"
           echo no | avdmanager create avd --force -n mixlab -k "$image" --device pixel_5
-          export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
           emulator -avd mixlab -no-window -no-audio -no-snapshot -gpu swiftshader_indirect -memory 4096 > "$RUNNER_TEMP/emulator.log" 2>&1 &
           adb wait-for-device
           until adb shell getprop sys.boot_completed | tr -d '\r' | grep -qx 1; do sleep 3; done
@@ -60,6 +62,8 @@ jobs:
           for attempt in {1..60}; do curl -fsS http://localhost:9222/json/version && break; sleep 2; done
           curl -fsS http://localhost:9222/json/version
       - name: Separate audio in Android Chrome
+        shell: bash
         run: |
           python -m http.server 8213 --directory site &
-          python tests/stem_editor.py --cdp http://127.0.0.1:9222
+          python tests/stem_editor.py --cdp http://127.0.0.1:9222 2>&1 | tee test.log || { echo "::error::$(tail -c 650 test.log | tr '\n' ' ')"; exit 1; }
+          tail -3 test.log >> "$GITHUB_STEP_SUMMARY"

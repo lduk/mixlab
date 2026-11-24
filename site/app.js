@@ -985,7 +985,7 @@ function insertStems(source,begin,end,result){
       fadeIn:inherited ? 0 : source.fadeIn,fadeOut:inherited ? 0 : source.fadeOut})
   }
   for(const [role,name] of [['vocals','Wokal'],['accompaniment','Podkład']]){
-    piece(role,name,result[role],0,result[role].duration,begin,track++)
+    piece(role,name,result[role],0,end-begin,begin,track++)
   }
   if(partial){
     if(clip.begin<begin)piece('remainder','Przed zaznaczeniem',source.buffer,clip.begin,begin,0,track)
