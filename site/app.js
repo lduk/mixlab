@@ -1,3 +1,4 @@
+import {effects, effectBuffer} from './effects.js'
 import {estimateBpm} from './bpm.js'
 import {duration, transitions, transitionGain, fadeScale, envelope, prepare, schedule} from './audio.js'
 const $ = id => document.getElementById(id)
@@ -442,6 +443,89 @@ function render(){
   $('split').disabled=!clips.length
   $('undo').disabled=!history.length
 }
+function addClip(buffer,name,sourceBpm,offset) {
+  remember()
+  active=clips.push({
+    buffer,name,sourceBpm,offset,track:nextTrack++,preserve:true,curve:'equal',
+    begin:0,end:buffer.duration,speed:1,volume:100,fadeIn:0,fadeOut:0
+  })-1
+  render()
+}
+
+const effectsDialog=$('effectsDialog')
+let audition=null, effectPosition=0
+function stopAudition(){
+  if(!audition)return
+  const {node,button}=audition
+  audition=null
+  node.onended=null
+  node.stop()
+  node.disconnect()
+  button.textContent='▶'
+  button.setAttribute('aria-pressed','false')
+}
+$('openEffects').onclick=()=>{
+  effectPosition=displayedTime
+  cursor=effectPosition
+  stop()
+  $('effectTime').textContent=format(effectPosition)
+  $('effectStatus').textContent=''
+  effectsDialog.showModal()
+}
+function closeEffects(){
+  stopAudition()
+  effectsDialog.close()
+}
+$('closeEffects').onclick=closeEffects
+effectsDialog.oncancel=stopAudition
+for(const effect of effects){
+  const row=document.createElement('div')
+  const name=document.createElement('span')
+  const preview=document.createElement('button')
+  const add=document.createElement('button')
+  name.textContent=effect.name
+  preview.textContent='▶'
+  preview.setAttribute('aria-label','Odsłuch: '+effect.name)
+  preview.setAttribute('aria-pressed','false')
+  preview.onclick=async()=>{
+    const toggledOff=audition?.button===preview
+    stopAudition()
+    if(toggledOff)return
+    context ??= new AudioContext()
+    const node=context.createBufferSource()
+    node.buffer=effectBuffer(context,effect)
+    node.connect(context.destination)
+    audition={node,button:preview}
+    node.onended=()=>{
+      node.disconnect()
+      if(audition?.node===node){
+        audition=null
+        preview.textContent='▶'
+        preview.setAttribute('aria-pressed','false')
+      }
+    }
+    preview.textContent='■'
+    preview.setAttribute('aria-pressed','true')
+    node.start()
+    try{await context.resume()}
+    catch{
+      if(audition?.node===node){
+        stopAudition()
+        $('effectStatus').textContent='Nie udało się uruchomić odsłuchu.'
+      }
+    }
+  }
+  add.textContent='Dodaj'
+  add.setAttribute('aria-label','Dodaj: '+effect.name)
+  add.onclick=()=>{
+    closeEffects()
+    context ??= new AudioContext()
+    addClip(effectBuffer(context,effect),effect.name,null,effectPosition)
+    $('message').textContent='Dodano '+effect.name+' w '+format(effectPosition)+'.'
+  }
+  row.append(preview,name,add)
+  $('effectList').append(row)
+}
 $('files').onchange=async e=>{
   const input=e.target, files=[...input.files], errors=[]
   input.disabled=true
@@ -450,9 +534,7 @@ $('files').onchange=async e=>{
     for(const file of files){
       try{
         const buffer=await context.decodeAudioData(await file.arrayBuffer())
-        remember()
-        active=clips.push({buffer,sourceBpm:estimateBpm(buffer),track:nextTrack++,preserve:true,curve:'equal',name:file.name,begin:0,end:buffer.duration,speed:1,volume:100,fadeIn:0,fadeOut:0})-1
-        render()
+        addClip(buffer,file.name,estimateBpm(buffer))
       }catch{errors.push(file.name)}
     }
     $('message').textContent=errors.length?'Nie można odczytać: '+errors.join(', '):''

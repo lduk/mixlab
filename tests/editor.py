@@ -34,6 +34,40 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
             rate=audio.getframerate()
             signal=array.array('h', audio.readframes(audio.getnframes()))[::2]
         return rate,signal
+    # Start with an empty mix. Auditioning must not add a clip or an undo entry.
+    page.locator('#openEffects').click()
+    library=page.locator('#effectsDialog')
+    for name in ['Wybuch','Syrena','Krzyk','Świst','Oklaski','Pukanie','Dzwonek','Laser']:
+        preview=library.get_by_role('button', name='Odsłuch: '+name, exact=True)
+        preview.click()
+        assert preview.get_attribute('aria-pressed')=='true'
+        assert library.locator('button[aria-pressed=true]').count()==1
+    page.keyboard.press('Escape')
+    assert page.locator('#undo').is_disabled()
+    library.wait_for(state='hidden')
+    assert library.locator('button[aria-pressed=true]').count()==0
+    page.locator('#openEffects').click()
+    library.get_by_role('button',name='Dodaj: Syrena',exact=True).click()
+    rate,dry=export()
+    assert len(dry)==round(2.5*rate) and max(dry)>5000
+    box=page.locator('#ruler').bounding_box()
+    page.locator('#ruler').click(position={'x':round(box['width']*.32),'y':18})
+    page.locator('#openEffects').click()
+    library.get_by_role('button',name='Dodaj: Wybuch',exact=True).click()
+    start=float(page.locator('#offset').input_value())
+    assert abs(start-1)<.02
+    assert page.locator('#lanes [data-track="2"] canvas').count()==1
+    rate,mixed=export()
+    assert abs(len(mixed)/rate-start-2.4)<.001
+    assert max(mixed[rate*3:])>0
+    page.locator('#undo').click()
+    assert page.locator('#lanes canvas').count()==1
+    page.locator('#redo').click()
+    with page.expect_download() as effects_download:
+        page.locator('#exportMenu').click()
+        page.locator('#mp3').click()
+    assert Path(effects_download.value.path()).stat().st_size>1000
+    page.reload()
     page.locator('#files').set_input_files(root/'440.wav')
     page.locator('[data-action=faster]').first.click()
     assert page.locator('.clip-tempo').first.inner_text()=='101%'
@@ -225,5 +259,8 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     assert phone.locator('.clip-tempo').last.inner_text()=='121 BPM'
     phone.locator('#estimateBpm').tap()
     assert phone.locator('#sourceBpm').input_value()=='120'
+    phone.locator('#openEffects').tap()
+    phone.get_by_role('button',name='Dodaj: Krzyk',exact=True).tap()
+    assert phone.locator('#properties').inner_text()=='Krzyk'
     assert not errors,errors
     print('Acceptance checks passed')

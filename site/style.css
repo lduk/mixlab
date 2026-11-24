@@ -95,3 +95,12 @@ li button:first-child{flex:1;text-align:left;overflow-wrap:anywhere}
 #hoverGuide,#hoverTime{position:absolute;pointer-events:none;z-index:2}
 #hoverGuide{top:19px;bottom:0;border-left:1px dashed #f0f6ff}
 #hoverTime{top:0;background:#e4effa;color:#142233;border-radius:3px;padding:2px 5px;font:12px ui-monospace,monospace}
+
+#effectsDialog{width:min(420px,calc(100% - 24px));max-height:85vh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel);color:inherit}
+#effectsDialog::backdrop{background:#070b10ad}
+#effectsDialog header{margin:0}
+#effectsDialog p{font-size:14px;color:var(--muted)}
+#effectTime{font-variant-numeric:tabular-nums}
+#effectList>div{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:6px 0;border-top:1px solid var(--line)}
+#effectList button[aria-pressed=true]{color:#84d9b7}
+#effectStatus:empty{display:none}

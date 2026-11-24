@@ -11,6 +11,7 @@
 <div id="formats" hidden><button id="save">Eksport WAV</button><button id="mp3">Eksport MP3</button></div></div></header>
 <div class="tools" aria-label="Narzędzia">
   <label class="import">＋ Audio<input id="files" type="file" multiple></label>
+  <button id="openEffects" aria-haspopup="dialog">＋ Efekty</button>
   <div id="modes" role="group" aria-label="Tryb edycji">
     <button data-mode="move" aria-pressed="true">Przesuń</button>
     <button data-mode="trim" aria-pressed="false">Przytnij</button>
@@ -20,6 +21,12 @@
   </div>
   <div class="history"><button id="undo" title="Cofnij" aria-label="Cofnij">↶</button><button id="redo" title="Ponów" aria-label="Ponów">↷</button></div>
 </div>
+<dialog id="effectsDialog" aria-labelledby="effectsTitle">
+  <header><h2 id="effectsTitle">Efekty dźwiękowe</h2><button id="closeEffects" aria-label="Zamknij bibliotekę">✕</button></header>
+  <p>Dodaj na nowej ścieżce w <strong id="effectTime"></strong>.</p>
+  <div id="effectList"></div>
+  <p id="effectStatus" role="status"></p>
+</dialog>
 <p class="hint" id="hint"></p>
 <div class="timeline-scroll"><div id="timeline">
   <div id="ruler" title="Kliknij, aby ustawić kursor. Przeciągnij, aby zaznaczyć pętlę."></div>

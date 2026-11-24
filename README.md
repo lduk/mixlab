@@ -10,6 +10,8 @@ Otwórz port 8213 w przeglądarce. Do publikacji wystarcza zawartość katalogu 
 
 ## Montaż
 
+- Kliknij podziałkę, a następnie **＋ Efekty**. Przycisk **▶** pozwala odsłuchać dźwięk, a **Dodaj** wstawia go na osobnej ścieżce w miejscu kursora. Efekty są syntetyzowane w przeglądarce i można je edytować oraz eksportować tak jak nagrania.
+
 - Dodaj nagrania. Każdy import tworzy osobną ścieżkę. W trybie **Przesuwanie** przeciągnij klip na inną ścieżkę lub do pola „Nowa ścieżka”. Przyciąganie wyrównuje brzegi do innych klipów w odległości ośmiu pikseli.
 - W trybie **Przycinanie** przeciągnij lewą lub prawą stronę klipu. Możesz odzyskać materiał, rozciągając krawędź. W trybie **Zmiana tempa** podobny gest zmienia czas trwania. Właściwości pozwalają wpisać tempo od 25% do 400% lub wybrać podpowiedź w polu procentowym.
 - Wybierz **Narastanie** i kliknij na fali moment osiągnięcia pełnej głośności. Przesuwaj miętowy punkt, aby zmienić wejście. We właściwościach klipu możesz wybrać krzywą liniową lub Equal Power.
