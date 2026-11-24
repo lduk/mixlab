@@ -88,7 +88,7 @@ export async function prepare(items) {
   }
 }
 
-export function schedule(ctx,items,start,from,to) {
+export function schedule(ctx,items,start,from,to,connectLiveOutput) {
   // Conservative headroom based on the largest simultaneous sum of clip gains.
   const edges=items.flatMap(c=>[[c.at,c.volume/100],[c.at+duration(c),-c.volume/100]])
   let sum=0, peak=1
@@ -99,7 +99,7 @@ export function schedule(ctx,items,start,from,to) {
   const nodes=[]
   for(const c of items){
     const first=Math.max(from,c.at), last=Math.min(to,c.at+duration(c))
-    if(last<=first)continue
+    if(last<=first || (c.muted && !connectLiveOutput))continue
     const source=ctx.createBufferSource(), gain=ctx.createGain()
     source.buffer=c.processed || c.buffer
     const speed=c.processed ? 1 : c.speed
@@ -122,7 +122,9 @@ export function schedule(ctx,items,start,from,to) {
       if(t===local) gain.gain.setValueAtTime(value,onset)
       else gain.gain.linearRampToValueAtTime(value,onset+t-local)
     }
-    source.connect(gain).connect(ctx.destination)
+    source.connect(gain)
+    if(connectLiveOutput)connectLiveOutput(gain,c)
+    else gain.connect(ctx.destination)
     source.start(onset,(c.processed ? 0 : c.begin)+local*speed,(last-first)*speed)
     nodes.push(source)
   }

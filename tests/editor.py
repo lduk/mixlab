@@ -35,6 +35,10 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
             signal=array.array('h', audio.readframes(audio.getnframes()))[::2]
         return rate,signal
     page.locator('#files').set_input_files(root/'440.wav')
+    page.locator('[data-action=faster]').first.click()
+    assert page.locator('.clip-tempo').first.inner_text()=='101%'
+    page.locator('[data-action=slower]').first.click()
+    assert page.locator('.clip-tempo').first.inner_text()=='100%'
     for percent in (125,75):
         field('speed',percent)
         rate,signal=export()
@@ -52,13 +56,48 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
         y=box['y']+box['height']*.65
         page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+dx,y+dy,steps=8);page.mouse.up()
     field('sourceBpm',100)
+    toolbar=page.locator('.clip-tools').first
+    assert toolbar.inner_text().startswith('100 BPM')
+    toolbar.locator('[data-action=faster]').click()
+    assert page.locator('#targetBpm').input_value()=='101'
+    toolbar.locator('[data-action=slower]').click()
+    assert page.locator('#targetBpm').input_value()=='100'
+    ruler=page.locator('#ruler')
+    ruler.scroll_into_view_if_needed()
+    box=ruler.bounding_box()
+    x=round(box['x']+box['width']*.35)
+    clock=page.locator('#clock').inner_text()
+    page.mouse.move(x,box['y']+15)
+    value=page.locator('#hoverTime').inner_text()
+    assert abs(float(value.split(':')[1])-(x-box['x'])*12.5/box['width'])<.002
+    assert page.locator('#hoverGuide').is_visible() and page.locator('#clock').inner_text()==clock
+    page.mouse.move(x,box['y']+box['height']+4)
+    assert page.locator('#hoverGuide').is_hidden()
+    page.locator('#zoom').select_option('4')
+    page.locator('.timeline-scroll').evaluate('node=>node.scrollLeft=400')
+    visible=page.locator('.timeline-scroll').bounding_box()
+    scaled=ruler.bounding_box()
+    x=round(visible['x']+.55*visible['width'])
+    page.mouse.move(x,scaled['y']+10)
+    hovered=page.locator('#hoverTime').inner_text()
+    assert abs(float(hovered.split(':')[1])-(x-scaled['x'])*12.5/scaled['width'])<.002
+    page.locator('#zoom').select_option('1')
+    page.locator('#play').click()
+    page.wait_for_function("!document.getElementById('pauseMix').disabled")
+    toolbar.locator('[data-action=mute]').click()
+    assert page.locator('#pauseMix').is_enabled()
+    page.locator('#stop').click()
+    rate,silence=export()
+    assert max(map(abs,silence))==0 and len(silence)==10*rate
+    toolbar.locator('[data-action=mute]').click()
+    assert page.locator('#volume').input_value()=='100'
     field('targetBpm',125)
     assert page.locator('#speed').input_value()=='125'
     rate,signal=export()
     assert abs(len(signal)/rate-8)<.001
     page.locator('#undo').click()
     assert page.locator('#targetBpm').input_value()=='100'
-    bar=page.locator('#lanes button').first
+    bar=page.locator('#lanes .wave-clip').first
     page.locator('button[data-mode=attack]').click()
     bar.click(position={'x':round(bar.bounding_box()['width']*.4),'y':38})
     assert abs(float(page.locator('#fadeIn').input_value())-4)<.05
@@ -72,7 +111,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     field('fadeIn',0)
     # Place a fade at six seconds on a ten-second clip and adjust its visible marker.
     page.locator('button[data-mode=fade]').click()
-    bar=page.locator('#lanes button').first
+    bar=page.locator('#lanes .wave-clip').first
     bar.click(position={'x':round(bar.bounding_box()['width']*.6),'y':38})
     assert abs(float(page.locator('#fadeOut').input_value())-4)<.05
     rate,signal=export()
@@ -105,7 +144,16 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     field('offset',5)
     rate,signal=export()
     assert abs(len(signal)/rate-15)<.001
-    gesture(page.locator('[data-track="2"] canvas'),0,-90)
+    secondMute=page.locator('[data-action=mute]').nth(1)
+    secondMute.click()
+    singleRate,single=export()
+    assert singleRate==rate and len(single)==len(signal)
+    assert single[rate:rate*2]==signal[rate:rate*2]
+    assert max(map(abs,single[rate*11:]))==0
+    secondMute.click()
+    second=page.locator('[data-track="2"] canvas')
+    shift=page.locator('[data-track="1"]').bounding_box()['y']-page.locator('[data-track="2"]').bounding_box()['y']
+    gesture(second,0,shift)
     assert page.locator('[data-track="1"] canvas').count()==2
     field('crossLength',3)
     page.locator('#curve').select_option('linear')
@@ -127,6 +175,10 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     assert page.locator('#loop').is_checked()
     page.locator('#play').click()
     page.wait_for_function("!document.getElementById('pauseMix').disabled")
+    secondMute.click()
+    page.wait_for_timeout(100)
+    assert page.locator('#pauseMix').is_enabled()
+    secondMute.click()
     page.locator('#pauseMix').click()
     assert page.locator('#pauseMix').inner_text()=='Wznów'
     page.locator('#stop').click()
@@ -137,7 +189,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
         page.locator('#mp3').click()
     assert download.value.suggested_filename.endswith('.mp3')
     page.set_viewport_size({'width':740,'height':360})
-    page.locator('#lanes button').first.tap()
+    page.locator('#lanes .wave-clip').first.tap()
     assert page.locator('#properties').inner_text()=='440.wav'
     page.locator('button[data-mode=trim]').click()
     handle=page.locator('[data-edge=right]').first
@@ -168,6 +220,9 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
         out.writeframes(samples.tobytes())
     phone.locator('#files').set_input_files(root/'beat.wav')
     phone.wait_for_function("document.getElementById('properties').textContent==='beat.wav'")
+    assert phone.locator('.clip-tempo').last.inner_text()=='120 BPM'
+    phone.locator('[data-action=faster]').last.tap()
+    assert phone.locator('.clip-tempo').last.inner_text()=='121 BPM'
     phone.locator('#estimateBpm').tap()
     assert phone.locator('#sourceBpm').input_value()=='120'
     assert not errors,errors

@@ -7,10 +7,10 @@ let frame, selection, drag
 let future=[], cursor=0, loopRange=null, revision=0, nextTrack=1
 function arrangement(){
   let next = 0
-  const items=clips.map(c => {
+  const items=clips.map((c,index) => {
     const at = c.offset ?? next
     next = at + duration(c)
-    return {...c, at}
+    return {...c, at, index}
   })
   transitions(items,$('auto').checked)
   return items
@@ -26,6 +26,7 @@ function showTime(position, total){
   $('clock').textContent=format(position)+' / '+format(total)
   $('cursor').style.left=(100*position/span)+'%'
 }
+let updateLiveMute = null
 let playbackMode = null
 let exporting = false
 function updatePause(){
@@ -36,6 +37,7 @@ function updatePause(){
   }
 }
 function stop() {
+  updateLiveMute=null
   revision++
   playbackMode=null
   updatePause()
@@ -47,6 +49,9 @@ function stop() {
 function snapshot(){return {clips:clips.map(c=>({...c})),active,auto:$('auto').checked}}
 function remember() {
   stop()
+  recordEdit()
+}
+function recordEdit() {
   history.push(snapshot())
   future=[]
   if (history.length > 30) history.shift()
@@ -140,9 +145,64 @@ function editFadePoint(event, bar, clip, index, key, marker) {
     $('range').textContent = description+format(clip.at+point)+' · długość '+format(draft[key])
   }
 }
+function tempoLabel(c){
+  return c.sourceBpm ? mixBpm(c)+' BPM' : Number((100*c.speed).toFixed(2))+'%'
+}
+
+function makeClipControls(c,index){
+  const dock=document.createElement('div')
+  dock.className='clip-dock'
+  const tools=document.createElement('div')
+  tools.className='clip-tools'
+  tools.setAttribute('role','group')
+  tools.setAttribute('aria-label','Sterowanie klipem '+c.name)
+  const tempo=document.createElement('span')
+  tempo.className='clip-tempo'
+  tempo.title=c.sourceBpm ? 'Tempo w miksie' : 'Prędkość odtwarzania · nieznane BPM'
+  tools.append(tempo)
+  function control(text,title,action){
+    const button=document.createElement('button')
+    button.textContent=text
+    button.title=title
+    button.setAttribute('aria-label',title+' · '+c.name)
+    button.onclick=()=>{
+      action()
+      active=index
+      render()
+      const replacement=$('lanes').querySelectorAll('.clip-tools')[index]?.querySelector('[data-action="'+button.dataset.action+'"]')
+      if(replacement && !replacement.disabled) replacement.focus({preventScroll:true})
+    }
+    tools.append(button)
+    return button
+  }
+  for(const direction of [-1,1]){
+    const change=direction/(c.sourceBpm || 100)
+    const speed=Math.max(.25,Math.min(4,Number((c.speed+change).toFixed(12))))
+    const unit=c.sourceBpm ? '1 BPM' : '1 punkt procentowy'
+    const title=(direction>0 ? 'Zwiększ' : 'Zmniejsz')+' tempo o '+unit
+    const button=control(direction>0 ? '+' : '−',title,()=>{
+      remember()
+      clips[index].speed=speed
+    })
+    button.dataset.action=direction>0 ? 'faster' : 'slower'
+    button.disabled=speed===c.speed
+  }
+  const mute=control(c.muted ? 'Włącz' : 'Wycisz',c.muted ? 'Włącz dźwięk klipu' : 'Wycisz dźwięk klipu',()=>{
+    recordEdit()
+    clips[index].muted=!clips[index].muted
+    updateLiveMute?.(index,clips[index].muted)
+  })
+  mute.dataset.action='mute'
+  mute.setAttribute('aria-pressed',Boolean(c.muted))
+  dock.append(tools)
+  return dock
+}
+
 function paintClip(bar,c){
-  bar.style.left=(100*c.at/span)+'%'
-  bar.style.width=(100*duration(c)/span)+'%'
+  const slot=bar.parentElement
+  slot.style.setProperty('--at',(100*c.at/span)+'%')
+  slot.style.setProperty('--duration',(100*duration(c)/span)+'%')
+  slot.querySelector('.clip-tempo').textContent=tempoLabel(c)
   const canvas=bar.querySelector('canvas'), g=canvas.getContext('2d')
   const data=c.buffer.getChannelData(0), rate=c.buffer.sampleRate
   g.clearRect(0,0,canvas.width,canvas.height)
@@ -195,16 +255,20 @@ function renderTimeline(items){
   timeline.style.width=(100*zoom)+'%'
   const ruler=$('ruler')
   ruler.replaceChildren()
-  const ideal=span*90/Math.max(1,timeline.clientWidth)
+  const timelineWidth=Math.max(1,timeline.clientWidth)
+  const controlDuration=parseFloat(getComputedStyle(timeline).getPropertyValue('--controls-width'))*span/timelineWidth
+  const ideal=Math.max(.001,span*77/timelineWidth)
   const magnitude=10**Math.floor(Math.log10(ideal))
   const step=magnitude*[1,2,5,10].find(n=>n*magnitude>=ideal)
   timeline.style.setProperty('--grid',(100*step/span)+'%')
+  ruler.style.setProperty('--minor',(100*Math.max(.001,step/10)/span)+'%')
   for(let i=0;i*step<span;i++){
     const tick=document.createElement('span')
     tick.textContent=format(i*step)
     tick.style.left=(100*i*step/span)+'%'
     ruler.append(tick)
   }
+  refreshRulerHover()
   $('range').textContent=''
   $('lanes').replaceChildren()
   const lanes=new Map()
@@ -218,13 +282,17 @@ function renderTimeline(items){
   }
   items.forEach((clip,index)=>{
     const {lane,ends}=lanes.get(clip.track)
-    let row=ends.findIndex(end=>end<=clip.at)
+    const dockStart=Math.max(0,Math.min(clip.at,span-controlDuration))
+    let row=ends.findIndex(end=>end<=dockStart)
     if(row<0)row=ends.length
-    ends[row]=clip.at+duration(clip)
+    ends[row]=Math.max(clip.at+duration(clip),dockStart+controlDuration)
+    const slot=document.createElement('div')
+    slot.className='clip-slot'
+    slot.classList.toggle('muted',Boolean(clip.muted))
     const bar=document.createElement('button')
     const label=document.createElement('span'),canvas=document.createElement('canvas')
-    label.textContent=clip.name+' · '+Number((clip.speed*100).toFixed(1))+'%'
-    if(clip.sourceBpm) label.textContent+=' · '+mixBpm(clip)+' BPM'
+    label.textContent=clip.name
+    bar.className='wave-clip'
     bar.dataset.color=index%4
     canvas.width=800
     canvas.height=44
@@ -242,9 +310,10 @@ function renderTimeline(items){
       bar.append(marker)
     }
     bar.setAttribute('aria-pressed',index===active)
-    lane.append(bar)
-    bar.style.top=(23+row*66)+'px'
-    lane.style.height=(25+ends.length*66)+'px'
+    slot.append(bar,makeClipControls(clip,index))
+    lane.append(slot)
+    slot.style.top=(23+row*96)+'px'
+    lane.style.height=(25+ends.length*96)+'px'
     paintClip(bar,clip)
     bar.onclick=e=>{if(e.detail===0){active=index;render()}}
     bar.onpointerdown=e=>{
@@ -290,7 +359,7 @@ function renderTimeline(items){
           const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('[data-track]')
           if(target){
             draft.track=Number(target.dataset.track)
-            if(bar.parentElement!==target){target.append(bar);bar.setPointerCapture(e.pointerId)}
+            if(slot.parentElement!==target){target.append(slot);bar.setPointerCapture(e.pointerId)}
           }
         }
         paintClip(bar,draft)
@@ -382,7 +451,7 @@ $('files').onchange=async e=>{
       try{
         const buffer=await context.decodeAudioData(await file.arrayBuffer())
         remember()
-        active=clips.push({buffer,track:nextTrack++,preserve:true,curve:'equal',name:file.name,begin:0,end:buffer.duration,speed:1,volume:100,fadeIn:0,fadeOut:0})-1
+        active=clips.push({buffer,sourceBpm:estimateBpm(buffer),track:nextTrack++,preserve:true,curve:'equal',name:file.name,begin:0,end:buffer.duration,speed:1,volume:100,fadeIn:0,fadeOut:0})-1
         render()
       }catch{errors.push(file.name)}
     }
@@ -501,6 +570,32 @@ function paintLoop(){
   }
 }
 $('loop').onchange=()=>{stop();paintLoop()}
+let rulerPointer=null
+function refreshRulerHover(){
+  const guide=$('hoverGuide'), label=$('hoverTime')
+  guide.hidden=label.hidden=rulerPointer===null
+  if(guide.hidden)return
+  const box=$('ruler').getBoundingClientRect()
+  const viewport=$('ruler').closest('.timeline-scroll').getBoundingClientRect()
+  const x=Math.max(0,Math.min(box.width,rulerPointer-box.left))
+  guide.style.left=x+'px'
+  label.textContent=format(span*x/box.width)
+  const maxLeft=viewport.right-box.left-label.offsetWidth
+  label.style.left=Math.max(viewport.left-box.left,Math.min(x+5,maxLeft))+'px'
+}
+function trackRuler(event){
+  rulerPointer=event.clientX
+  refreshRulerHover()
+}
+function hideGuide(){
+  rulerPointer=null
+  refreshRulerHover()
+}
+for(const type of ['pointerenter','pointermove','pointerdown']) $('ruler').addEventListener(type,trackRuler)
+$('ruler').addEventListener('pointerleave',hideGuide)
+$('ruler').addEventListener('pointercancel',hideGuide)
+$('ruler').addEventListener('pointerup',event=>{if(event.pointerType!=='mouse')hideGuide()})
+document.querySelector('.timeline-scroll').addEventListener('scroll',refreshRulerHover)
 $('ruler').onpointerdown=e=>{
   if(!clips.length || e.button!==0)return
   stop()
@@ -543,31 +638,72 @@ async function play(mode,items,origin,from,to,repeat=false){
     if(token!==revision)return
     const length=to-from
     if(length<=0)return
-    let loopBuffer
-    if(repeat){
-      const offline=new OfflineAudioContext(2,Math.ceil(length*context.sampleRate),context.sampleRate)
-      schedule(offline,items,0,from,to)
-      loopBuffer=await offline.startRendering()
-      if(token!==revision)return
+    let start
+    const total=lengthOf(arrangement())
+    // Mute can change while pitch-preserving audio is being prepared.
+    for(const c of items)c.muted=clips[c.index].muted
+    function begin(){
+      playbackMode=mode
+      updatePause()
+      tick()
     }
-    playbackMode=mode
-    updatePause()
-    const start=context.currentTime+.04, total=lengthOf(arrangement())
-    if(loopBuffer){
-      const node=context.createBufferSource()
-      node.buffer=loopBuffer
-      node.loop=true
-      node.connect(context.destination)
-      node.start(start)
-      sources=[node]
-    }else sources=schedule(context,items,start,from,to)
+    if(repeat){
+      // Keep the current loop sounding while rendering a replacement. Swap at
+      // the same phase of the audio clock, including when playback is paused.
+      let building=false, dirty=false
+      async function refreshLoop(){
+        dirty=true
+        if(building)return
+        building=true
+        try{
+          while(dirty && token===revision){
+            dirty=false
+            const offline=new OfflineAudioContext(2,Math.ceil(length*context.sampleRate),context.sampleRate)
+            schedule(offline,items,0,from,to)
+            const buffer=await offline.startRendering()
+            if(dirty || token!==revision)continue
+            const when=Math.max(start ?? 0,context.currentTime+.02)
+            const first=start===undefined
+            if(first)start=when
+            const node=context.createBufferSource()
+            node.buffer=buffer
+            node.loop=true
+            node.connect(context.destination)
+            node.start(when,(when-start)%length)
+            sources.forEach(s=>s.stop(when))
+            sources=[node]
+            if(first)begin()
+          }
+        }catch{
+          if(token===revision){stop();$('message').textContent='Nie udało się przygotować pętli.'}
+        }finally{building=false}
+      }
+      updateLiveMute=(index,muted)=>{
+        const clip=items.find(c=>c.index===index)
+        if(clip){clip.muted=muted;refreshLoop()}
+      }
+      await refreshLoop()
+    }else{
+      const gates=new Map()
+      start=context.currentTime+.04
+      sources=schedule(context,items,start,from,to,(gain,c)=>{
+        const gate=context.createGain()
+        gate.gain.value=c.muted ? 0 : 1
+        gain.connect(gate).connect(context.destination)
+        gates.set(c.index,gate)
+      })
+      updateLiveMute=(index,muted)=>{
+        const gate=gates.get(index)
+        if(gate)gate.gain.setTargetAtTime(muted ? 0 : 1,context.currentTime,.003)
+      }
+      begin()
+    }
     function tick(){
       const t=Math.max(0,context.currentTime-start)
       showTime(origin+from+(repeat?t%length:Math.min(t,length)),total)
       if(repeat || t<length)frame=requestAnimationFrame(tick)
-      else {sources=[];playbackMode=null;updatePause()}
+      else {sources=[];playbackMode=null;updateLiveMute=null;updatePause()}
     }
-    tick()
   }catch{$('message').textContent='Nie udało się przygotować odsłuchu.'}
 }
 $('play').onclick=()=>{
@@ -622,7 +758,7 @@ async function exportMix(format){
   try{
     const rate=format==='mp3' ? 44100 : context.sampleRate, items=arrangement(), seconds=lengthOf(items)
     const offline=new OfflineAudioContext(2,Math.ceil(seconds*rate),rate)
-    await prepare(items)
+    await prepare(items.filter(c=>!c.muted))
     schedule(offline,items,0,0,seconds)
     const buffer=await offline.startRendering()
     const blob=format==='mp3' ? await encodeMp3(buffer) : encodeWav(buffer)
@@ -636,3 +772,11 @@ async function exportMix(format){
 $('save').onclick=()=>exportMix('wav')
 $('mp3').onclick=()=>exportMix('mp3')
 render()
+
+const viewport=document.querySelector('.timeline-scroll')
+let viewportWidth=viewport.clientWidth
+new ResizeObserver(()=>{
+  if(viewport.clientWidth===viewportWidth)return
+  viewportWidth=viewport.clientWidth
+  renderTimeline(arrangement())
+}).observe(viewport)
