@@ -1,4 +1,4 @@
-import {drawWave} from './waveform.js'
+import {drawWave,paintSamples} from './waveform.js'
 import {modelCached, deviceLimit, separateClip} from './stems.js'
 import {effects, effectBuffer} from './effects.js'
 import {estimateBpm} from './bpm.js'
@@ -61,17 +61,16 @@ function recordEdit() {
 }
 function draw() {
   const canvas = document.querySelector('#editor canvas'), g = canvas.getContext('2d')
-  const c = current(), data = c.buffer.getChannelData(0)
-  g.clearRect(0,0,1000,120)
-  g.fillStyle = '#30445b'
-  g.fillRect(1000*(selection?.begin ?? c.begin)/c.buffer.duration,0,1000*((selection?.end ?? c.end)-(selection?.begin ?? c.begin))/c.buffer.duration,120)
-  g.fillStyle = '#a6d5e9'
-  for(let x=0;x<1000;x++){
-    const start=Math.floor(x*data.length/1000), width=Math.ceil(data.length/1000)
-    let peak=0
-    for(let j=start;j<Math.min(data.length,start+width);j+=Math.max(1,Math.floor(width/64))) peak=Math.max(peak,Math.abs(data[j]))
-    g.fillRect(x,60-peak*57,1,Math.max(1,peak*114))
-  }
+  const c=current(), dpr=devicePixelRatio || 1
+  const width=Math.max(1,Math.round(canvas.clientWidth*dpr))
+  const height=Math.max(1,Math.round(canvas.clientHeight*dpr))
+  if(canvas.width!==width)canvas.width=width
+  if(canvas.height!==height)canvas.height=height
+  g.clearRect(0,0,width,height)
+  g.fillStyle='#30445b'
+  const begin=selection?.begin ?? c.begin, end=selection?.end ?? c.end
+  g.fillRect(width*begin/c.buffer.duration,0,width*(end-begin)/c.buffer.duration,height)
+  paintSamples(g,c.buffer,0,c.buffer.length/width)
 }
 function showFormats(open) {
   $('formats').hidden = !open
@@ -260,27 +259,34 @@ function paintVisibleWave(bar){
   g.lineWidth=1.5
   g.stroke()
 }
-function renderTimeline(items){
-  const zoom=Number($('zoom').value), timeline=$('timeline')
-  timeline.style.width=(100*zoom)+'%'
-  const ruler=$('ruler')
-  const waveHeight=52+Math.round(9*Math.log2(zoom))
-  timeline.style.setProperty('--wave-height',waveHeight+'px')
-  const rowHeight=waveHeight+60
-  ruler.replaceChildren()
-  const timelineWidth=Math.max(1,timeline.clientWidth)
-  const controlDuration=parseFloat(getComputedStyle(timeline).getPropertyValue('--controls-width'))*span/timelineWidth
+function drawTicks(timeline,ruler,timelineWidth){
   const ideal=Math.max(.001,span*77/timelineWidth)
   const magnitude=10**Math.floor(Math.log10(ideal))
   const step=magnitude*[1,2,5,10].find(n=>n*magnitude>=ideal)
   timeline.style.setProperty('--grid',(100*step/span)+'%')
   ruler.style.setProperty('--minor',(100*Math.max(.001,step/10)/span)+'%')
-  for(let i=0;i*step<span;i++){
+  const view=ruler.closest('.timeline-scroll')
+  const pixels=step*timelineWidth/span
+  const first=Math.max(0,Math.floor(view.scrollLeft/pixels)-1)
+  const last=Math.ceil((view.scrollLeft+view.clientWidth)/pixels)+1
+  ruler.replaceChildren()
+  for(let i=first;i<=last && i*step<span;i++){
     const tick=document.createElement('span')
     tick.textContent=format(i*step)
     tick.style.left=(100*i*step/span)+'%'
     ruler.append(tick)
   }
+}
+function renderTimeline(items){
+  const zoom=2**Number($('zoom').value), timeline=$('timeline')
+  timeline.style.width=(100*zoom)+'%'
+  const ruler=$('ruler')
+  const waveHeight=52+Math.round(9*Math.log2(zoom))
+  timeline.style.setProperty('--wave-height',waveHeight+'px')
+  const rowHeight=waveHeight+60
+  const timelineWidth=Math.max(1,timeline.clientWidth)
+  const controlDuration=parseFloat(getComputedStyle(timeline).getPropertyValue('--controls-width'))*span/timelineWidth
+  drawTicks(timeline,ruler,timelineWidth)
   refreshRulerHover()
   $('range').textContent=''
   $('lanes').replaceChildren()
@@ -421,7 +427,9 @@ $('zoom').oninput=()=>{
   const playhead=displayedTime*oldWidth/span-view.scrollLeft
   const anchor=playhead>=0 && playhead<=view.clientWidth ? playhead : view.clientWidth/2
   const fraction=(view.scrollLeft+anchor)/oldWidth
-  $('zoomValue').textContent=$('zoom').value+'×'
+  const label=Number((2**Number($('zoom').value)).toFixed(1))+'×'
+  $('zoomValue').textContent=label
+  $('zoom').setAttribute('aria-valuetext',label)
   renderTimeline(arrangement())
   view.scrollLeft=fraction*$('timeline').clientWidth-anchor
 }
@@ -761,7 +769,10 @@ let scrollFrame
 document.querySelector('.timeline-scroll').addEventListener('scroll',()=>{
   refreshRulerHover()
   cancelAnimationFrame(scrollFrame)
-  scrollFrame=requestAnimationFrame(()=>document.querySelectorAll('.wave-clip').forEach(paintVisibleWave))
+  scrollFrame=requestAnimationFrame(()=>{
+    drawTicks($('timeline'),$('ruler'),$('timeline').clientWidth)
+    document.querySelectorAll('.wave-clip').forEach(paintVisibleWave)
+  })
 })
 $('ruler').onpointerdown=e=>{
   if(!clips.length || e.button!==0)return
@@ -1096,5 +1107,6 @@ let viewportWidth=viewport.clientWidth
 new ResizeObserver(()=>{
   if(viewport.clientWidth===viewportWidth)return
   viewportWidth=viewport.clientWidth
+  if(current())draw()
   renderTimeline(arrangement())
 }).observe(viewport)

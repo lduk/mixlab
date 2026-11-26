@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     assert page.locator('#hoverGuide').is_visible() and page.locator('#clock').inner_text()==clock
     page.mouse.move(x,box['y']+box['height']+4)
     assert page.locator('#hoverGuide').is_visible()
-    page.locator('#zoom').fill('4')
+    page.locator('#zoom').fill('2')
     page.locator('.timeline-scroll').evaluate('node=>node.scrollLeft=400')
     visible=page.locator('.timeline-scroll').bounding_box()
     scaled=ruler.bounding_box()
@@ -115,7 +115,7 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     page.mouse.move(x,scaled['y']+10)
     hovered=page.locator('#hoverTime').inner_text()
     assert abs(float(hovered.split(':')[1])-(x-scaled['x'])*12.5/scaled['width'])<.002
-    page.locator('#zoom').fill('1')
+    page.locator('#zoom').fill('0')
     bar=page.locator('.wave-clip').first
     canvas=bar.locator('canvas')
     canvas.click(position={'x':int(canvas.bounding_box()['width']*.3),'y':25})
@@ -126,11 +126,28 @@ with tempfile.TemporaryDirectory() as directory, sync_playwright() as playwright
     assert abs(float(page.locator('#end').input_value())-7)<.05
     assert abs(float(page.locator('#offset').input_value())-5)<.05
     page.locator('#undo').click()
-    page.locator('#zoom').fill('64')
+    page.locator('#zoom').fill('12')
     page.locator('.timeline-scroll').evaluate('node=>node.scrollLeft=12000')
     page.wait_for_function("parseFloat(document.querySelector('.wave-clip canvas').style.left)>10000")
+    assert page.locator('#zoomValue').inner_text()=='4096×'
+    assert 0<page.locator('#ruler span').count()<100
+    # At this scale the 440 Hz tone has individual sample markers away from zero.
+    assert canvas.evaluate('''c=>{
+      const {data}=c.getContext('2d').getImageData(0,0,c.width,c.height)
+      let trace=0,axis=0
+      for(let x=0;x<c.width;x++){
+        for(let y=2;y<c.height-2;y++){
+          const i=(y*c.width+x)*4
+          if(data[i+3]>120 && data[i]===219){
+            trace++
+            if(y===Math.floor(c.height/2))axis++
+          }
+        }
+      }
+      return trace>100 && axis<c.width/3
+    }''')
     assert canvas.evaluate('c=>Math.abs(c.width-c.clientWidth*devicePixelRatio)<2 && c.clientHeight>90')
-    page.locator('#zoom').fill('1')
+    page.locator('#zoom').fill('0')
     page.locator('#play').click()
     page.wait_for_function("!document.getElementById('pauseMix').disabled")
     toolbar.locator('[data-action=mute]').click()

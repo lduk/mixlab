@@ -26,16 +26,43 @@ export function drawWave(canvas,clip,view){
   canvas.style.width=width+'px'
   canvas.width=Math.max(1,Math.ceil(width*dpr))
   canvas.height=Math.max(1,Math.round(height*dpr))
-  const g=canvas.getContext('2d'),data=clip.buffer.getChannelData(0)
   const step=(clip.end-clip.begin)*clip.buffer.sampleRate/full
   const start=clip.begin*clip.buffer.sampleRate+left*step
-  const samples=width*step/canvas.width, mid=canvas.height/2
-  const pairs=samples>=block ? peaks(clip.buffer) : null
+  const g=canvas.getContext('2d')
+  paintSamples(g,clip.buffer,start,width*step/canvas.width,clip.begin*clip.buffer.sampleRate,clip.end*clip.buffer.sampleRate)
+  g.setTransform(canvas.width/width,0,0,canvas.height/height,0,0)
+  return {g,left,width,full,height}
+}
+
+export function paintSamples(g,buffer,start,samples,begin=0,endFrame=buffer.length){
+  const {width,height}=g.canvas, mid=height/2
+  const data=buffer.getChannelData(0)
+  const first=Math.max(0,Math.floor(begin))
+  const last=Math.min(data.length-1,Math.max(first,Math.ceil(endFrame)-1))
+  if(samples<=4){
+    // Include the neighbouring frames so the trace continues across the viewport edge.
+    const from=Math.max(first,Math.floor(start))
+    const to=Math.min(last,Math.ceil(start+width*samples))
+    g.strokeStyle=g.fillStyle='#dbf3ff'
+    g.lineWidth=Math.max(1,devicePixelRatio*.9)
+    g.lineJoin='round'
+    g.beginPath()
+    for(let i=from;i<=to;i++)g.lineTo((i-start)/samples,mid-data[i]*(mid-1))
+    g.stroke()
+    if(from===to || samples*devicePixelRatio<=.16){
+      const size=Math.max(2,devicePixelRatio*2)
+      for(let i=from;i<=to;i++){
+        g.fillRect(Math.round((i-start)/samples-size/2),Math.round(mid-data[i]*(mid-1)-size/2),size,size)
+      }
+    }
+    return
+  }
+  const pairs=samples>=block ? peaks(buffer) : null
   g.fillStyle='#dbf3ff'
-  for(let x=0;x<canvas.width;x++){
-    let i=Math.min(data.length-1,Math.floor(start+x*samples))
-    const end=Math.min(data.length,Math.max(i+1,Math.floor(start+(x+1)*samples)))
-    let low=0,high=0
+  for(let x=0;x<width;x++){
+    let i=Math.min(last,Math.floor(start+x*samples))
+    const end=Math.min(last+1,Math.max(i+1,Math.floor(start+(x+1)*samples)))
+    let low=data[Math.max(first,i-1)],high=low
     while(i<end){
       if(pairs && i%block===0 && i+block<=end){
         low=Math.min(low,pairs[2*i/block]);high=Math.max(high,pairs[2*i/block+1]);i+=block
@@ -43,8 +70,7 @@ export function drawWave(canvas,clip,view){
         low=Math.min(low,data[i]);high=Math.max(high,data[i]);i++
       }
     }
-    g.fillRect(x,mid-high*mid,1,Math.max(1,(high-low)*mid))
+    const top=Math.floor(mid-high*(mid-1))
+    g.fillRect(x,top,1,Math.max(1,Math.ceil(mid-low*(mid-1))-top))
   }
-  g.setTransform(canvas.width/width,0,0,canvas.height/height,0,0)
-  return {g,left,width,full,height}
 }
