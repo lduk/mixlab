@@ -73,7 +73,7 @@ export function envelope(c,t) {
   const length=duration(c)
   const scale=fadeScale(c)
   const attack=c.fadeIn ? Math.min(1,t/(c.fadeIn*scale)) : 1
-  let level=Math.min(transitionGain(attack,true,c.attackCurve!=='equal'),c.fadeOut ? (length-t)/(c.fadeOut*scale) : 1)
+  let level=Math.min(transitionGain(attack,true,c.attackCurve!=='equal'),c.fadeOut ? transitionGain(Math.max(0,Math.min(1,(length-t)/(c.fadeOut*scale))),true,c.releaseCurve!=='equal') : 1)
   for (const tr of c.transitions ?? []) {
     if(t<tr.start || t>tr.start+tr.overlap) continue
     const phase=Math.min(1,(t-tr.start)/tr.length)
@@ -125,6 +125,9 @@ function envelopePoints(c,add,rate){
     for(let i=1;i<32;i++)add(c.fadeIn*scale*i/32)
   }
   add(c.fadeIn*scale)
+  if(c.fadeOut && c.releaseCurve==='equal'){
+    for(let i=1;i<32;i++)add(duration(c)-c.fadeOut*scale*i/32)
+  }
   add(duration(c)-c.fadeOut*scale)
   for(const tr of c.transitions ?? []){
     for(let i=0;i<=48;i++) add(tr.start+tr.length*i/48)

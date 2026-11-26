@@ -20,17 +20,10 @@
       <p id="effectStatus" role="status">Ładowanie efektów…</p>
     </section>
   </details>
-  <div id="modes" role="group" aria-label="Tryb edycji">
-    <button data-mode="move" aria-pressed="true">Przesuń</button>
-    <button data-mode="trim" aria-pressed="false">Przytnij</button>
-    <button data-mode="stretch" aria-pressed="false">Tempo</button>
-    <button data-mode="attack" aria-pressed="false">Narastanie</button>
-    <button data-mode="fade" aria-pressed="false">Wycisz</button>
-  </div>
   <div class="history"><button id="undo" title="Cofnij" aria-label="Cofnij">↶</button><button id="redo" title="Ponów" aria-label="Ponów">↷</button></div>
 </div>
 
-<p class="hint" id="hint"></p>
+<p class="hint">Przeciągnij tytuł, aby przesunąć klip. Zaznacz fragment na fali lub przytnij jej brzegi. Przesuń różowy punkt, aby ustawić długość przejścia. Kliknij punkt, aby zmienić krzywą.</p>
 <div class="timeline-scroll"><div id="timeline">
   <div id="ruler" title="Kliknij, aby ustawić kursor. Przeciągnij, aby zaznaczyć pętlę."></div>
   <div id="loopBand"></div><div id="lanes"></div><i id="cursor"></i>
@@ -40,9 +33,9 @@
   <button id="play" title="Odtwórz miks" aria-label="Odtwórz miks">▶</button>
   <button id="pauseMix" aria-label="Pauza lub wznowienie miksu" disabled>Pauza</button>
   <button id="stop" title="Stop" aria-label="Stop">■</button>
-  <output id="clock"></output>
+  <div class="time-zoom"><output id="clock"></output>
+  <label class="zoom">Zoom <input id="zoom" type="range" min="1" max="64" value="1"><output id="zoomValue" for="zoom">1×</output></label></div>
   <label><input id="snap" type="checkbox" checked> Przyciąganie</label>
-  <label>Zoom <select id="zoom"><option>1</option><option>2</option><option>4</option><option>16</option><option>64</option></select>×</label>
 </div>
 <output id="range"></output>
 <div class="options">
@@ -62,8 +55,9 @@
 <label>BPM docelowe<input id="targetBpm" type="number" step="any" disabled></label>
 <output id="bpmStatus"></output>
 <label>Przejście<select id="curve"><option value="equal">Equal Power</option><option value="linear">Linear</option></select></label><label>Przejście (s)<input type="number" min="0" step="any" placeholder="Automatycznie" id="crossLength"></label>
-<label>Głośność (%)<input id="volume" type="number" min="0" max="100"></label><label>Narastanie (s)<input id="fadeIn" type="number" min="0" step="any"></label><label>Krzywa wejścia<select id="attackCurve"><option value="linear">Liniowa</option><option value="equal">Equal Power</option></select></label><label>Wygaszanie (s)<input id="fadeOut" type="number" min="0" step="any"></label></div><button id="preview">▶ Odsłuch klipu</button> <button id="pauseClip" aria-label="Pauza lub wznowienie klipu" disabled>Pauza</button>
+<label>Głośność (%)<input id="volume" type="number" min="0" max="100"></label><label>Narastanie (s)<input id="fadeIn" type="number" min="0" step="any"></label><label>Krzywa wejścia<select id="attackCurve"><option value="linear">Liniowa</option><option value="equal">Equal Power</option></select></label><label>Wygaszanie (s)<input id="fadeOut" type="number" min="0" step="any"></label><label>Krzywa wyjścia<select id="releaseCurve"><option value="linear">Liniowa</option><option value="equal">Equal Power</option></select></label></div><button id="preview">▶ Odsłuch klipu</button> <button id="pauseClip" aria-label="Pauza lub wznowienie klipu" disabled>Pauza</button>
 <details id="clipMenu"><summary>Opcje klipu</summary><div class="clip-actions">
+  <button id="clipSplit">Podziel przy kursorze</button>
   <button id="openStems">Rozdziel na ścieżki AI</button>
   <button id="solo" aria-pressed="false">Solo</button>
   <label>Efekt klipu <select id="filter"><option value="">Brak</option><option value="highpass">Usuń niskie tony · 100 Hz</option><option value="lowpass">Przytłumienie · 3,5 kHz</option></select></label>

@@ -1,3 +1,4 @@
+import {drawWave} from './waveform.js'
 import {modelCached, deviceLimit, separateClip} from './stems.js'
 import {effects, effectBuffer} from './effects.js'
 import {estimateBpm} from './bpm.js'
@@ -72,27 +73,6 @@ function draw() {
     g.fillRect(x,60-peak*57,1,Math.max(1,peak*114))
   }
 }
-let mode = 'move'
-const hints = {
-  move: 'Przeciągnij klip wzdłuż osi lub na inną ścieżkę.',
-  trim: 'Przeciągnij lewą lub prawą krawędź klipu, aby go przyciąć.',
-  stretch: 'Przeciągnij krawędź klipu, aby zmienić tempo.',
-  attack: 'Kliknij na fali moment, w którym wejście ma osiągnąć pełną głośność. Przesuń miętowy punkt, aby go dopasować.',
-  fade: 'Kliknij na fali początek wyciszenia. Przesuń złoty punkt, aby go dopasować.'
-}
-function selectMode(value) {
-  mode = value
-  $('timeline').dataset.mode = mode
-  $('hint').textContent = hints[mode]
-  for (const button of $('modes').querySelectorAll('button')) {
-    button.setAttribute('aria-pressed',button.dataset.mode === mode)
-  }
-}
-for (const button of $('modes').querySelectorAll('button')) {
-  button.onclick = () => selectMode(button.dataset.mode)
-}
-selectMode(mode)
-
 function showFormats(open) {
   $('formats').hidden = !open
   $('exportMenu').setAttribute('aria-expanded',open)
@@ -108,9 +88,8 @@ document.addEventListener('keydown', event => {
   }
 })
 
-function editFadePoint(event, bar, clip, index, key, marker) {
+function editFadePoint(event, bar, clip, index, key) {
   const width = bar.getBoundingClientRect().width
-  const left = bar.getBoundingClientRect().left
   const length = duration(clip)
   const scale = fadeScale(clip)
   const inward = key === 'fadeIn'
@@ -120,7 +99,7 @@ function editFadePoint(event, bar, clip, index, key, marker) {
   let point = start
   bar.setPointerCapture(event.pointerId)
   function preview(x) {
-    const time = marker ? start + (x-event.clientX)*length/width : (x-left)*length/width
+    const time = start + (x-event.clientX)*length/width
     point = Math.max(0,Math.min(length,Math.round(time*1000)/1000))
     draft.fadeIn = inward ? point : Math.min(clip.fadeIn*scale,point)
     draft.fadeOut = inward ? Math.min(clip.fadeOut*scale,length-point) : length-point
@@ -131,20 +110,25 @@ function editFadePoint(event, bar, clip, index, key, marker) {
     bar.onpointermove = bar.onpointerup = bar.onpointercancel = null
     render()
   }
-  if (!marker) preview(event.clientX)
   bar.onpointermove = e => {if(e.pointerId===event.pointerId) preview(e.clientX)}
   bar.onpointercancel = finish
   bar.onpointerup = e => {
     if(e.pointerId!==event.pointerId)return
-    if(!marker || e.clientX!==event.clientX) preview(e.clientX)
-    if(draft.fadeOut!==clip.fadeOut || draft.fadeIn!==clip.fadeIn) {
+    if(Math.abs(e.clientX-event.clientX)>=3){
+      preview(e.clientX)
+      if(draft.fadeOut!==clip.fadeOut || draft.fadeIn!==clip.fadeIn){
+        remember()
+        clips[index].fadeIn=draft.fadeIn
+        clips[index].fadeOut=draft.fadeOut
+      }
+    }else{
       remember()
-      clips[index].fadeIn = draft.fadeIn
-      clips[index].fadeOut = draft.fadeOut
+      const curve=inward ? 'attackCurve' : 'releaseCurve'
+      clips[index][curve]=clips[index][curve]==='equal' ? 'linear' : 'equal'
     }
     active = index
     finish()
-    $('range').textContent = description+format(clip.at+point)+' · długość '+format(draft[key])
+    $('range').textContent = description+format(clip.at+point)+' · '+(clips[index][inward ? 'attackCurve' : 'releaseCurve']==='equal' ? 'Equal Power' : 'Liniowa')
   }
 }
 function tempoLabel(c){
@@ -198,7 +182,7 @@ function makeClipControls(c,index){
   mute.setAttribute('aria-pressed',Boolean(c.muted))
   const volumeRow=document.createElement('label')
   volumeRow.className='clip-volume'
-  volumeRow.append('Głośność')
+  volumeRow.title='Głośność klipu'
   const slider=document.createElement('input')
   slider.type='range'
   slider.min=0
@@ -228,6 +212,15 @@ function makeClipControls(c,index){
   slider.onchange=slider.onblur=()=>{editing=false}
   volumeRow.append(slider,readout)
   tools.append(volumeRow)
+  const menu=document.createElement('button')
+  menu.textContent='⋯'
+  menu.setAttribute('aria-label','Opcje klipu · '+c.name)
+  tools.append(menu)
+  menu.onclick=()=>{
+    if(active!==index){active=index;render()}
+    $('clipMenu').open=true
+    $('clipMenu').querySelector('summary').focus()
+  }
   dock.append(tools)
   return dock
 }
@@ -237,57 +230,43 @@ function paintClip(bar,c){
   slot.style.setProperty('--at',(100*c.at/span)+'%')
   slot.style.setProperty('--duration',(100*duration(c)/span)+'%')
   slot.querySelector('.clip-tempo').textContent=tempoLabel(c)
-  const canvas=bar.querySelector('canvas'), g=canvas.getContext('2d')
-  const data=c.buffer.getChannelData(0), rate=c.buffer.sampleRate
-  g.clearRect(0,0,canvas.width,canvas.height)
-  const length=duration(c)
-  const scale=fadeScale(c)
+  const length=duration(c), scale=fadeScale(c)
   for(const marker of bar.querySelectorAll('[data-fade]')){
     const inward=marker.dataset.fade==='fadeIn'
     const fraction=c[marker.dataset.fade]*scale/length
     const boundary=inward ? fraction : 1-fraction
-    marker.hidden=fraction<=0
-    marker.style.left=(100*boundary)+'%'
-    marker.title=(inward ? 'Koniec narastania ' : 'Początek wyciszenia ')+format(c.at+length*boundary)
-    g.fillStyle=inward ? '#81dfc433' : '#ffcd6a22'
-    g.fillRect(inward ? 0 : boundary*canvas.width,0,fraction*canvas.width,44)
+    marker.style.left='clamp(8px,'+(100*boundary)+'%,calc(100% - 8px))'
+    const curve=c[inward ? 'attackCurve' : 'releaseCurve']
+    marker.title=(inward ? 'Narastanie' : 'Wyciszanie')+' · '+(curve==='equal' ? 'Equal Power' : 'Liniowa')+' · kliknij, aby zmienić krzywą'
   }
-  g.fillStyle='#d5e9f2'
-  const samples=(c.end-c.begin)*rate/canvas.width
-  for(let x=0;x<canvas.width;x++){
-    let peak=0
-    const first=Math.floor(c.begin*rate+x*samples)
-    const last=Math.min(data.length,Math.ceil(first+samples))
-    for(let j=first;j<last;j+=Math.max(1,Math.floor(samples/32)))peak=Math.max(peak,Math.abs(data[j]))
-    g.fillRect(x,22-peak*22,1,Math.max(1,peak*44))
+  bar.waveClip=c
+  paintVisibleWave(bar)
+}
+function paintVisibleWave(bar){
+  const c=bar.waveClip
+  const strip=drawWave(bar.querySelector('canvas'),c,document.querySelector('.timeline-scroll').getBoundingClientRect())
+  if(!strip)return
+  const {g,left,width,full,height}=strip, length=duration(c)
+  bar.querySelector('span').style.paddingLeft=(left+18)+'px'
+  function shade(start,end,color){
+    g.fillStyle=color
+    g.fillRect(start*full-left,0,(end-start)*full,height)
   }
-  for(const tr of c.transitions ?? []){
-    g.fillStyle='#a480ff55'
-    const xStart=canvas.width*tr.start/length
-    const width=canvas.width*tr.length/length
-    g.fillRect(xStart,0,width,44)
-    g.beginPath()
-    for(let step=0;step<=32;step++){
-      const phase=step/32
-      const gain=transitionGain(phase,!tr.inward,tr.linear)
-      g.lineTo(xStart+phase*width,42-40*gain)
-    }
-    g.strokeStyle='#ffe5a7aa'
-    g.lineWidth=1.5
-    g.stroke()
-  }
+  for(const tr of c.transitions ?? [])shade(tr.start/length,(tr.start+tr.length)/length,'#a480ff55')
+  if(selection && active===c.index)shade((selection.begin-c.begin)/(c.end-c.begin),(selection.end-c.begin)/(c.end-c.begin),'#85dafa55')
   g.beginPath()
-  for(let x=0;x<=canvas.width;x+=4){
-    g.lineTo(x,42-40*envelope(c,duration(c)*x/canvas.width))
-  }
-  g.strokeStyle='#ffde8c'
-  g.lineWidth=2
+  for(let x=0;x<=Math.ceil(width);x+=1)g.lineTo(x,height-2-(height-4)*envelope(c,length*(x+left)/full))
+  g.strokeStyle='#ffaacb'
+  g.lineWidth=1.5
   g.stroke()
 }
 function renderTimeline(items){
   const zoom=Number($('zoom').value), timeline=$('timeline')
   timeline.style.width=(100*zoom)+'%'
   const ruler=$('ruler')
+  const waveHeight=52+Math.round(9*Math.log2(zoom))
+  timeline.style.setProperty('--wave-height',waveHeight+'px')
+  const rowHeight=waveHeight+60
   ruler.replaceChildren()
   const timelineWidth=Math.max(1,timeline.clientWidth)
   const controlDuration=parseFloat(getComputedStyle(timeline).getPropertyValue('--controls-width'))*span/timelineWidth
@@ -328,13 +307,11 @@ function renderTimeline(items){
     label.textContent=clip.name
     bar.className='wave-clip'
     bar.dataset.color=index%4
-    canvas.width=800
-    canvas.height=44
     bar.append(label,canvas)
-    for(const edge of ['left','right','fadeIn','fadeOut']){
+    for(const edge of ['left','right','stretch']){
       const handle=document.createElement('i')
       handle.dataset.edge=edge
-      handle.title=({left:'Lewa krawędź',right:'Prawa krawędź',fadeIn:'Narastanie',fadeOut:'Wygaszanie'})[edge]
+      handle.title=({left:'Lewa krawędź',right:'Prawa krawędź',stretch:'Przeciągnij, aby zmienić tempo'})[edge]
       bar.append(handle)
     }
     for(const key of ['fadeIn','fadeOut']){
@@ -346,9 +323,16 @@ function renderTimeline(items){
     bar.setAttribute('aria-pressed',index===active)
     slot.append(bar,makeClipControls(clip,index))
     lane.append(slot)
-    slot.style.top=(23+row*126)+'px'
-    lane.style.height=(25+ends.length*126)+'px'
+    slot.style.top=(23+row*rowHeight)+'px'
+    lane.style.height=(25+ends.length*rowHeight)+'px'
     paintClip(bar,clip)
+    if(selection && active===index){
+      const trim=document.createElement('button')
+      trim.className='trim-range'
+      trim.textContent='Przytnij zaznaczenie'
+      trim.onclick=()=>trimSelection(true)
+      slot.querySelector('.clip-tools').after(trim)
+    }
     bar.onclick=e=>{if(e.detail===0){active=index;render()}}
     bar.oncontextmenu=e=>{
       e.preventDefault()
@@ -360,13 +344,13 @@ function renderTimeline(items){
     bar.onpointerdown=e=>{
       if(e.button!==0 || !e.isPrimary)return
       const edge=e.target.dataset.edge, origin=e.clientX
-      const marker=e.target.dataset.fade
-      const fadeKey=mode==='attack' ? 'fadeIn' : mode==='fade' ? 'fadeOut' : marker
+      const fadeKey=e.target.dataset.fade
       if(fadeKey) {
-        editFadePoint(e,bar,clip,index,fadeKey,marker===fadeKey)
+        editFadePoint(e,bar,clip,index,fadeKey)
         return
       }
       const scale=span/timeline.getBoundingClientRect().width
+      const selecting=!edge && e.target.tagName!=='SPAN'
       let draft={...clip}, moved=false
       bar.setPointerCapture(e.pointerId)
       function update(event){
@@ -376,18 +360,22 @@ function renderTimeline(items){
         moved=true
         const delta=Math.round(dx*scale*1000)/1000
         const minimum=1/clip.buffer.sampleRate
-        const side=edge || (origin < bar.getBoundingClientRect().left+bar.clientWidth/2 ? 'left' : 'right')
-        if(edge==='fadeIn' || edge==='fadeOut'){
-          draft[edge]=Math.max(0,Math.min(duration(clip),clip[edge]+delta*(edge==='fadeIn'?1:-1)))
-        }else if(mode==='stretch'){
-          const desired=duration(clip)+(side==='right'?delta:-delta)
+        if(selecting){
+          const bounds=bar.getBoundingClientRect()
+          const time=x=>clip.begin+Math.max(0,Math.min(1,(x-bounds.left)/bounds.width))*(clip.end-clip.begin)
+          active=index
+          selection={begin:Math.min(time(origin),time(event.clientX)),end:Math.max(time(origin),time(event.clientX))}
+          paintVisibleWave(bar)
+          $('range').textContent=format(clip.at+(selection.begin-clip.begin)/clip.speed)+' – '+format(clip.at+(selection.end-clip.begin)/clip.speed)
+          return
+        }else if(edge==='stretch'){
+          const desired=duration(clip)+delta
           draft.speed=Math.max(.25,Math.min(4,(clip.end-clip.begin)/Math.max(.001,desired)))
-          if(side==='left')draft.at=Math.max(0,clip.at+duration(clip)-duration(draft))
-        }else if((edge || mode==='trim') && side==='left'){
+        }else if(edge==='left'){
           const shift=Math.max(-clip.at,-clip.begin/clip.speed,Math.min(delta,duration(clip)-minimum/clip.speed))
           draft.begin=clip.begin+shift*clip.speed
           draft.at=clip.at+shift
-        }else if(edge || mode==='trim'){
+        }else if(edge==='right'){
           draft.end=Math.max(clip.begin+minimum,Math.min(clip.buffer.duration,clip.end+delta*clip.speed))
         }else{
           draft.at=Math.max(0,clip.at+delta)
@@ -410,6 +398,10 @@ function renderTimeline(items){
       bar.onpointercancel=()=>render()
       bar.onpointerup=event=>{
         update(event)
+        if(moved && selecting){
+          render(selection?.end>selection?.begin ? selection : null)
+          return
+        }
         if(moved){
           remember()
           items.forEach((item,i)=>{clips[i].offset=item.at})
@@ -417,25 +409,31 @@ function renderTimeline(items){
         }
         nextTrack=Math.max(nextTrack,draft.track+1)
         active=index
-        if(!moved && (edge==='fadeIn' || edge==='fadeOut')){
-          remember()
-          clips[index][edge]=clips[index][edge] ? 0 : Math.min(1,duration(clip))
-        }
+        if(!moved)seekTimeline(event.clientX)
         render()
       }
     }
   })
 }
-$('zoom').onchange=render
-function render(){
+$('zoom').oninput=()=>{
+  const view=document.querySelector('.timeline-scroll')
+  const oldWidth=$('timeline').clientWidth
+  const playhead=displayedTime*oldWidth/span-view.scrollLeft
+  const anchor=playhead>=0 && playhead<=view.clientWidth ? playhead : view.clientWidth/2
+  const fraction=(view.scrollLeft+anchor)/oldWidth
+  $('zoomValue').textContent=$('zoom').value+'×'
+  renderTimeline(arrangement())
+  view.scrollLeft=fraction*$('timeline').clientWidth-anchor
+}
+function render(chosen){
   $('bpmStatus').textContent=''
-  selection=null
+  selection=chosen?.end>chosen?.begin ? chosen : null
   drag=null
-  $('trim').disabled=true
+  $('trim').disabled=!selection
   const items=arrangement(), total=lengthOf(items)
   span=total ? Math.max(0.01,total*1.25) : 30
   $('clipList').hidden=!clips.length
-  cursor=Math.min(cursor,total)
+  cursor=Math.min(cursor,span)
   if(!sources.length) showTime(cursor,total)
   paintLoop()
   renderTimeline(items)
@@ -468,6 +466,7 @@ function render(){
     $('sourceBpm').value=current().sourceBpm ?? ''
     $('targetBpm').disabled=!current().sourceBpm
     $('targetBpm').value=current().sourceBpm ? mixBpm(current()) : ''
+    $('releaseCurve').value=current().releaseCurve ?? 'linear'
     $('attackCurve').value=current().attackCurve ?? 'linear'
     $('preserve').checked=current().preserve
     $('curve').value=current().curve
@@ -676,8 +675,15 @@ function selectRange(e){
 wave.onpointermove=selectRange
 wave.onpointerup=e=>{selectRange(e);drag=null}
 wave.onpointercancel=()=>{drag=null;selection=null;$('trim').disabled=true;draw()}
-$('trim').onclick=()=>{
+$('trim').onclick=()=>trimSelection(false)
+function trimSelection(onTimeline){
+  if(!selection)return
+  const items=arrangement(),c=items[active]
   remember()
+  if(onTimeline){
+    items.forEach((item,i)=>{clips[i].offset=item.at})
+    current().offset=c.at+(selection.begin-c.begin)/c.speed
+  }
   Object.assign(current(),selection)
   render()
 }
@@ -699,7 +705,7 @@ $('auto').onchange=()=>{
   $('auto').checked=!$('auto').checked
   render()
 }
-for(const key of ['preserve','curve','attackCurve','crossLength']) $(key).onchange=()=>{
+for(const key of ['preserve','curve','attackCurve','releaseCurve','crossLength']) $(key).onchange=()=>{
   const field=$(key)
   if(!field.validity.valid){render();return}
   remember()
@@ -715,7 +721,16 @@ function paintLoop(){
   }
 }
 $('loop').onchange=()=>{stop();paintLoop()}
-let rulerPointer=null
+function seekTimeline(x){
+  stop()
+  const rect=$('timeline').getBoundingClientRect(),total=lengthOf(arrangement())
+  cursor=Math.max(0,Math.min(span,(x-rect.left)*span/rect.width))
+  showTime(cursor,total)
+}
+$('lanes').addEventListener('click',e=>{
+  if(!e.target.closest('button,input,label'))seekTimeline(e.clientX)
+})
+let rulerPointer=null, pointerY=0
 function refreshRulerHover(){
   const guide=$('hoverGuide'), label=$('hoverTime')
   guide.hidden=label.hidden=rulerPointer===null
@@ -723,12 +738,14 @@ function refreshRulerHover(){
   const box=$('ruler').getBoundingClientRect()
   const viewport=$('ruler').closest('.timeline-scroll').getBoundingClientRect()
   const x=Math.max(0,Math.min(box.width,rulerPointer-box.left))
+  label.style.top=Math.max(0,Math.min($('timeline').clientHeight-label.offsetHeight,pointerY-box.top-22))+'px'
   guide.style.left=x+'px'
   label.textContent=format(span*x/box.width)
   const maxLeft=viewport.right-box.left-label.offsetWidth
   label.style.left=Math.max(viewport.left-box.left,Math.min(x+5,maxLeft))+'px'
 }
 function trackRuler(event){
+  pointerY=event.clientY
   rulerPointer=event.clientX
   refreshRulerHover()
 }
@@ -736,16 +753,21 @@ function hideGuide(){
   rulerPointer=null
   refreshRulerHover()
 }
-for(const type of ['pointerenter','pointermove','pointerdown']) $('ruler').addEventListener(type,trackRuler)
-$('ruler').addEventListener('pointerleave',hideGuide)
-$('ruler').addEventListener('pointercancel',hideGuide)
-$('ruler').addEventListener('pointerup',event=>{if(event.pointerType!=='mouse')hideGuide()})
-document.querySelector('.timeline-scroll').addEventListener('scroll',refreshRulerHover)
+for(const type of ['pointerenter','pointermove','pointerdown']) $('timeline').addEventListener(type,trackRuler)
+$('timeline').addEventListener('pointerleave',hideGuide)
+$('timeline').addEventListener('pointercancel',hideGuide)
+$('timeline').addEventListener('pointerup',event=>{if(event.pointerType!=='mouse')hideGuide()})
+let scrollFrame
+document.querySelector('.timeline-scroll').addEventListener('scroll',()=>{
+  refreshRulerHover()
+  cancelAnimationFrame(scrollFrame)
+  scrollFrame=requestAnimationFrame(()=>document.querySelectorAll('.wave-clip').forEach(paintVisibleWave))
+})
 $('ruler').onpointerdown=e=>{
   if(!clips.length || e.button!==0)return
   stop()
   const ruler=$('ruler'), box=ruler.getBoundingClientRect(), total=lengthOf(arrangement())
-  const time=x=>Math.min(total,Math.max(0,(x-box.left)*span/box.width))
+  const time=x=>Math.min(span,Math.max(0,(x-box.left)*span/box.width))
   const first=time(e.clientX)
   cursor=first
   showTime(cursor,total)
@@ -761,7 +783,7 @@ $('ruler').onpointerdown=e=>{
   ruler.onpointerup=event=>{update(event);ruler.onpointermove=null}
   ruler.onpointercancel=()=>{ruler.onpointermove=null}
 }
-$('split').onclick=()=>{
+$('clipSplit').onclick=$('split').onclick=()=>{
   const items=arrangement(), c=items[active]
   const cut=displayedTime
   const point=c.begin+(cut-c.at)*c.speed
@@ -977,7 +999,7 @@ function insertStems(source,begin,end,result){
   // already in progress at either boundary. Store time in source coordinates.
   const inherited=(partial || clip.transitions.length) ? {
     begin:clip.begin,end:clip.end,speed:clip.speed,fadeIn:clip.fadeIn,fadeOut:clip.fadeOut,
-    attackCurve:clip.attackCurve,transitions:clip.transitions
+    attackCurve:clip.attackCurve,releaseCurve:clip.releaseCurve,transitions:clip.transitions
   } : null
   function piece(role,name,buffer,first,last,origin,lane){
     additions.push({...common,name:source.name+' · '+name,stemRole:role,track:lane,buffer,
